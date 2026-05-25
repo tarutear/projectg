@@ -3,7 +3,7 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // COOP/COEP required for SharedArrayBuffer (WASM threads in Phase 1-2)
+        // COOP + COEP required for SharedArrayBuffer / WASM threads
         source: '/(.*)',
         headers: [
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
@@ -11,7 +11,16 @@ const nextConfig = {
         ],
       },
       {
-        source: '/opencv/:path*',
+        // opencv.js must be served as JavaScript, not application/wasm
+        source: '/opencv/:path*.js',
+        headers: [
+          { key: 'Content-Type', value: 'application/javascript' },
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
+        // The actual WASM binary loaded internally by opencv.js
+        source: '/opencv/:path*.wasm',
         headers: [
           { key: 'Content-Type', value: 'application/wasm' },
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
