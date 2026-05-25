@@ -1,0 +1,50 @@
+import { loadOpenCVInWorker } from '../lib/opencv/loader'
+import { detectYellowMarkers, type RawMarker } from '../lib/opencv/detector'
+import type { OpenCV } from '../lib/opencv/types'
+
+type InMsg =
+  | { type: 'INIT' }
+  | { type: 'PROCESS_FRAME'; frameId: number; buffer: ArrayBuffer; width: number; height: number }
+
+type OutMsg =
+  | { type: 'READY' }
+  | { type: 'ERROR'; message: string }
+  | { type: 'DETECTION_RESULT'; frameId: number; markers: RawMarker[]; latencyMs: number }
+
+let cv: OpenCV | null = null
+
+self.onmessage = async ({ data }: MessageEvent<InMsg>) => {
+  if (data.type === 'INIT') {
+    try {
+      cv = await loadOpenCVInWorker()
+      self.postMessage({ type: 'READY' } satisfies OutMsg)
+    } catch (e) {
+      self.postMessage({ type: 'ERROR', message: String(e) } satisfies OutMsg)
+    }
+    return
+  }
+
+  if (data.type === 'PROCESS_FRAME') {
+    if (!cv) {
+      self.postMessage({ type: 'ERROR', message: 'OpenCV not ready' } satisfies OutMsg)
+      return
+    }
+    const t0 = performance.now()
+    try {
+      const imageData = new ImageData(
+        new Uint8ClampedArray(data.buffer),
+        data.width,
+        data.height
+      )
+      const markers = detectYellowMarkers(cv, imageData)
+      self.postMessage({
+        type: 'DETECTION_RESULT',
+        frameId: data.frameId,
+        markers,
+        latencyMs: performance.now() - t0,
+      } satisfies OutMsg)
+    } catch (e) {
+      self.postMessage({ type: 'ERROR', message: String(e) } satisfies OutMsg)
+    }
+  }
+}
