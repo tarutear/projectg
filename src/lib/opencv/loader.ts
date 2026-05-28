@@ -1,12 +1,20 @@
 import type { OpenCV } from './types'
 
 type G = typeof self & {
-  cv?: OpenCV & { Mat?: unknown; onRuntimeInitialized?: () => void }
-  Module?: { locateFile?: (f: string) => string }
+  cv?: unknown
+  Module?: { onRuntimeInitialized?: () => void; locateFile?: (f: string) => string }
 }
 
 let cached: OpenCV | null = null
 let pending: Promise<OpenCV> | null = null
+
+function isThenable(v: unknown): v is Promise<OpenCV> {
+  return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).then === 'function'
+}
+
+function isCvReady(v: unknown): v is OpenCV {
+  return typeof v === 'object' && v !== null && Boolean((v as Record<string, unknown>).Mat)
+}
 
 export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
   if (cached) return Promise.resolve(cached)
@@ -18,7 +26,15 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
 
     const timer = setTimeout(() => {
       if (pollId) clearInterval(pollId)
-      if (!settled) reject(new Error('OpenCV.js init timeout (30s)'))
+      if (!settled) {
+        const g = self as G
+        console.error(
+          '[OpenCV] 30s timeout. typeof cv:', typeof g.cv,
+          '| isThenable:', isThenable(g.cv),
+          '| isCvReady:', isCvReady(g.cv)
+        )
+        reject(new Error('OpenCV.js init timeout (30s)'))
+      }
     }, 30_000)
 
     const finish = (cv: OpenCV) => {
@@ -27,11 +43,23 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
       clearTimeout(timer)
       if (pollId) clearInterval(pollId)
       cached = cv
+      console.log('[OpenCV] initialized successfully')
       resolve(cv)
     }
 
-    // Step 1: load the script synchronously via importScripts.
-    // Content-Type must be application/javascript (fixed in next.config.mjs).
+    // Belt-and-suspenders: configure Module BEFORE importScripts so Emscripten
+    // picks up onRuntimeInitialized even if cv-as-Promise path isn't taken.
+    ;(self as G).Module = {
+      onRuntimeInitialized() {
+        const g = self as G
+        console.log('[OpenCV] Module.onRuntimeInitialized fired')
+        if (isCvReady(g.cv)) {
+          finish(g.cv as unknown as OpenCV)
+        }
+      },
+    }
+
+    // Step 1 — load the script synchronously.
     try {
       ;(self as unknown as { importScripts(...u: string[]): void }).importScripts(src)
     } catch (e) {
@@ -42,9 +70,12 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
     }
 
     const g = self as G
+    console.log(
+      '[OpenCV] importScripts done | typeof cv:', typeof g.cv,
+      '| isThenable:', isThenable(g.cv),
+      '| isCvReady:', isCvReady(g.cv)
+    )
 
-    // Step 2: after importScripts, cv object exists but WASM may still be
-    // loading asynchronously. cv.Mat is only defined once WASM is ready.
     if (!g.cv) {
       settled = true
       clearTimeout(timer)
@@ -52,23 +83,46 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
       return
     }
 
-    // Already fully initialised (asm.js or very fast init)
-    if (g.cv.Mat) {
-      finish(g.cv as OpenCV)
+    // Case A — cv is a Promise (OpenCV.js 4.x UMD factory returns Promise)
+    if (isThenable(g.cv)) {
+      console.log('[OpenCV] cv is thenable — awaiting Promise...')
+      ;(g.cv as Promise<OpenCV>).then((resolvedCv) => {
+        console.log('[OpenCV] Promise resolved | isCvReady:', isCvReady(resolvedCv))
+        ;(self as G).cv = resolvedCv
+        finish(resolvedCv)
+      }).catch((err) => {
+        if (!settled) {
+          settled = true
+          clearTimeout(timer)
+          reject(new Error(`OpenCV.js Promise rejected: ${err}`))
+        }
+      })
       return
     }
 
-    // Official OpenCV.js Worker pattern: set the callback on cv itself.
-    // Emscripten calls cv['onRuntimeInitialized'] once the WASM heap is ready.
-    g.cv.onRuntimeInitialized = () => {
-      if (g.cv?.Mat) finish(g.cv as OpenCV)
+    // Case B — cv is the object and Mat is already defined (asm.js / fast init)
+    if (isCvReady(g.cv)) {
+      console.log('[OpenCV] cv ready immediately')
+      finish(g.cv as unknown as OpenCV)
+      return
     }
 
-    // Polling failsafe — catches cases where the callback was already invoked
-    // before we registered it, or is never invoked by this build.
+    // Case C — cv object exists but WASM still loading; set the callback on cv.
+    console.log('[OpenCV] waiting for cv.onRuntimeInitialized...')
+    ;(g.cv as Record<string, unknown>).onRuntimeInitialized = () => {
+      console.log('[OpenCV] cv.onRuntimeInitialized fired')
+      const current = (self as G).cv
+      if (isCvReady(current)) finish(current as unknown as OpenCV)
+    }
+
+    // Polling failsafe — catches builds where callbacks are never fired.
     pollId = setInterval(() => {
-      if ((self as G).cv?.Mat) finish((self as G).cv as OpenCV)
-    }, 250)
+      const current = (self as G).cv
+      if (!isThenable(current) && isCvReady(current)) {
+        console.log('[OpenCV] poll detected cv ready')
+        finish(current as unknown as OpenCV)
+      }
+    }, 200)
   })
 
   return pending
