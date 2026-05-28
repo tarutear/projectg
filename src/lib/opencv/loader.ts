@@ -1,8 +1,8 @@
 import type { OpenCV } from './types'
 
 type G = typeof self & {
-  cv?: OpenCV & { Mat?: unknown; calledRun?: boolean; then?: unknown }
-  Module?: { onRuntimeInitialized?: () => void; locateFile?: (f: string) => string }
+  cv?: OpenCV & { Mat?: unknown; onRuntimeInitialized?: () => void }
+  Module?: { locateFile?: (f: string) => string }
 }
 
 let cached: OpenCV | null = null
@@ -30,59 +30,45 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
       resolve(cv)
     }
 
-    // Set Module.onRuntimeInitialized BEFORE importScripts.
-    // opencv.js (Emscripten UMD) reads the global Module and preserves
-    // onRuntimeInitialized, calling it once WASM is fully instantiated.
-    ;(self as G).Module = {
-      locateFile: (f: string) => `/opencv/${f}`,
-      onRuntimeInitialized() {
-        const cv = (self as G).cv
-        // cv.Mat is the canary: only defined after WASM API is ready
-        if (cv?.Mat) finish(cv as OpenCV)
-      },
+    // Step 1: load the script synchronously via importScripts.
+    // Content-Type must be application/javascript (fixed in next.config.mjs).
+    try {
+      ;(self as unknown as { importScripts(...u: string[]): void }).importScripts(src)
+    } catch (e) {
+      settled = true
+      clearTimeout(timer)
+      reject(new Error(`importScripts('${src}') failed: ${e}`))
+      return
     }
 
-    fetch(src)
-      .then((res) => {
-        if (!res.ok) throw new Error(`fetch opencv.js → HTTP ${res.status}`)
-        return res.text()
-      })
-      .then((code) => {
-        // Blob URL avoids MIME-type enforcement of importScripts
-        const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
-        try {
-          ;(self as unknown as { importScripts(...u: string[]): void }).importScripts(url)
-        } finally {
-          URL.revokeObjectURL(url)
-        }
+    const g = self as G
 
-        const g = self as G
+    // Step 2: after importScripts, cv object exists but WASM may still be
+    // loading asynchronously. cv.Mat is only defined once WASM is ready.
+    if (!g.cv) {
+      settled = true
+      clearTimeout(timer)
+      reject(new Error('cv not defined after importScripts'))
+      return
+    }
 
-        // Some builds return cv as a Promise (factory pattern)
-        if (typeof g.cv?.then === 'function') {
-          ;(g.cv as unknown as Promise<OpenCV>).then(finish)
-          return
-        }
+    // Already fully initialised (asm.js or very fast init)
+    if (g.cv.Mat) {
+      finish(g.cv as OpenCV)
+      return
+    }
 
-        // Already fully initialised (asm.js or very fast WASM)
-        if (g.cv?.Mat) {
-          finish(g.cv as OpenCV)
-          return
-        }
+    // Official OpenCV.js Worker pattern: set the callback on cv itself.
+    // Emscripten calls cv['onRuntimeInitialized'] once the WASM heap is ready.
+    g.cv.onRuntimeInitialized = () => {
+      if (g.cv?.Mat) finish(g.cv as OpenCV)
+    }
 
-        // Async WASM path: onRuntimeInitialized is the primary trigger;
-        // poll every 200 ms as a failsafe in case the callback was missed.
-        pollId = setInterval(() => {
-          if ((self as G).cv?.Mat) finish((self as G).cv as OpenCV)
-        }, 200)
-      })
-      .catch((e: unknown) => {
-        if (!settled) {
-          settled = true
-          clearTimeout(timer)
-          reject(new Error(String(e)))
-        }
-      })
+    // Polling failsafe — catches cases where the callback was already invoked
+    // before we registered it, or is never invoked by this build.
+    pollId = setInterval(() => {
+      if ((self as G).cv?.Mat) finish((self as G).cv as OpenCV)
+    }, 250)
   })
 
   return pending
