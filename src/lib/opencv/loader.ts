@@ -1,11 +1,8 @@
 import type { OpenCV } from './types'
 
 type G = typeof self & {
-  cv?: OpenCV & { calledRun?: boolean; then?: (fn: (cv: OpenCV) => void) => void }
-  Module?: {
-    onRuntimeInitialized?: () => void
-    locateFile?: (f: string) => string
-  }
+  cv?: OpenCV & { Mat?: unknown; calledRun?: boolean; then?: unknown }
+  Module?: { onRuntimeInitialized?: () => void; locateFile?: (f: string) => string }
 }
 
 let cached: OpenCV | null = null
@@ -16,7 +13,6 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
   if (pending) return pending
 
   pending = new Promise<OpenCV>((resolve, reject) => {
-    const g = self as G
     let settled = false
     let pollId: ReturnType<typeof setInterval> | null = null
 
@@ -34,55 +30,53 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
       resolve(cv)
     }
 
-    // Set Module before script runs so Emscripten picks up our callbacks
-    g.Module = {
-      locateFile: (filename: string) => `/opencv/${filename}`,
+    // Set Module.onRuntimeInitialized BEFORE importScripts.
+    // opencv.js (Emscripten UMD) reads the global Module and preserves
+    // onRuntimeInitialized, calling it once WASM is fully instantiated.
+    ;(self as G).Module = {
+      locateFile: (f: string) => `/opencv/${f}`,
       onRuntimeInitialized() {
         const cv = (self as G).cv
-        if (cv) finish(cv)
+        // cv.Mat is the canary: only defined after WASM API is ready
+        if (cv?.Mat) finish(cv as OpenCV)
       },
     }
 
-    // Use fetch + Blob URL instead of importScripts to avoid MIME-type and
-    // COEP/CORP header requirements that block importScripts in practice.
     fetch(src)
       .then((res) => {
-        if (!res.ok) throw new Error(`fetch ${src} failed: HTTP ${res.status}`)
+        if (!res.ok) throw new Error(`fetch opencv.js → HTTP ${res.status}`)
         return res.text()
       })
       .then((code) => {
-        const blob = new Blob([code], { type: 'text/javascript' })
-        const blobUrl = URL.createObjectURL(blob)
+        // Blob URL avoids MIME-type enforcement of importScripts
+        const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
         try {
-          // importScripts with a blob: URL always works — no MIME check
-          ;(self as unknown as { importScripts: (...u: string[]) => void }).importScripts(
-            blobUrl
-          )
+          ;(self as unknown as { importScripts(...u: string[]): void }).importScripts(url)
         } finally {
-          URL.revokeObjectURL(blobUrl)
+          URL.revokeObjectURL(url)
         }
 
-        const cv = (self as G).cv
+        const g = self as G
 
-        // Case 1: newer builds expose cv as a Promise
-        if (cv?.then) {
-          cv.then((resolved: OpenCV) => finish(resolved))
+        // Some builds return cv as a Promise (factory pattern)
+        if (typeof g.cv?.then === 'function') {
+          ;(g.cv as unknown as Promise<OpenCV>).then(finish)
           return
         }
 
-        // Case 2: asm.js / synchronous init
-        if (cv) {
-          finish(cv)
+        // Already fully initialised (asm.js or very fast WASM)
+        if (g.cv?.Mat) {
+          finish(g.cv as OpenCV)
           return
         }
 
-        // Case 3: async WASM init — poll until cv is populated
+        // Async WASM path: onRuntimeInitialized is the primary trigger;
+        // poll every 200 ms as a failsafe in case the callback was missed.
         pollId = setInterval(() => {
-          const ready = (self as G).cv
-          if (ready && !ready.then) finish(ready)
+          if ((self as G).cv?.Mat) finish((self as G).cv as OpenCV)
         }, 200)
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         if (!settled) {
           settled = true
           clearTimeout(timer)
