@@ -46,8 +46,20 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
       if (settled) return
       settled = true
       cleanup()
+      // The OpenCV.js Module is itself a thenable (Emscripten MODULARIZE adds a
+      // `then`). Resolving a Promise with a thenable makes the JS runtime try to
+      // assimilate it by calling cv.then(), which for this build never completes
+      // -> `await loadOpenCVInWorker()` would hang forever even though init is
+      // done. Strip `then` so cv resolves as a plain value.
+      const anyCv = cv as unknown as Record<string, unknown>
+      try {
+        delete anyCv.then
+      } catch {
+        /* property may be non-configurable; fall through to overwrite */
+      }
+      anyCv.then = undefined
       cached = cv
-      console.log('[OpenCV] ready')
+      console.log('[OpenCV] ready (then stripped:', typeof anyCv.then, ')')
       resolve(cv)
     }
 
