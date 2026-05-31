@@ -12,13 +12,18 @@ type OutMsg =
   | { type: 'DETECTION_RESULT'; frameId: number; markers: RawMarker[]; latencyMs: number }
 
 let cv: OpenCV | null = null
+const TAG = Math.random().toString(36).slice(2, 6)
+console.log(`[Worker ${TAG}] script loaded`)
 
 self.onmessage = async ({ data }: MessageEvent<InMsg>) => {
   if (data.type === 'INIT') {
+    console.log(`[Worker ${TAG}] INIT received, loading OpenCV...`)
     try {
       cv = await loadOpenCVInWorker()
+      console.log(`[Worker ${TAG}] OpenCV resolved, posting READY`)
       self.postMessage({ type: 'READY' } satisfies OutMsg)
     } catch (e) {
+      console.error(`[Worker ${TAG}] INIT failed:`, e)
       self.postMessage({ type: 'ERROR', message: String(e) } satisfies OutMsg)
     }
     return

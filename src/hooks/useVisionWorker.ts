@@ -19,9 +19,12 @@ export function useVisionWorker() {
     const worker = new Worker(
       new URL('../workers/vision.worker.ts', import.meta.url)
     )
+    console.log('[useVisionWorker] worker created')
 
     worker.onmessage = ({ data }) => {
+      console.log('[useVisionWorker] message:', data.type)
       if (data.type === 'READY') {
+        console.log('[useVisionWorker] -> setState(ready)')
         setState('ready')
       } else if (data.type === 'DETECTION_RESULT') {
         handlerRef.current?.(data.markers, data.frameId, data.latencyMs)
@@ -40,6 +43,7 @@ export function useVisionWorker() {
     worker.postMessage({ type: 'INIT' })
 
     return () => {
+      console.log('[useVisionWorker] cleanup -> worker.terminate()')
       worker.terminate()
       workerRef.current = null
     }
