@@ -2,13 +2,13 @@ import type { OpenCV, CvMat } from './types'
 
 // HSV range for yellow markers (OpenCV: H 0–180, S/V 0–255).
 // Widened to handle different lighting conditions and shades of yellow.
-const H_LOW = 15,  H_HIGH = 45
-const S_LOW = 50,  S_HIGH = 255
-const V_LOW = 50,  V_HIGH = 255
+const H_LOW = 18,  H_HIGH = 38
+const S_LOW = 120, S_HIGH = 255
+const V_LOW = 80,  V_HIGH = 255
 
-const MIN_RADIUS = 3    // px
+const MIN_RADIUS = 8    // px — filter noise specks
 const MAX_RADIUS = 150  // px
-const MIN_CIRCULARITY = 0.3
+const MIN_CIRCULARITY = 0.6
 
 let _debugFrame = 0
 
@@ -26,7 +26,7 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
   const morphed  = new cv.Mat()
   const contours = new cv.MatVector()
   const hierarchy = new cv.Mat()
-  const kernel   = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5))
+  const kernel   = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(7, 7))
   let lowerMat: CvMat | null = null
   let upperMat: CvMat | null = null
   const results: RawMarker[] = []
