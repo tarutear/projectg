@@ -31,9 +31,13 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
     cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR)
     cv.cvtColor(bgr, hsv, cv.COLOR_BGR2HSV)
 
-    const low  = new cv.Scalar(H_LOW,  S_LOW,  V_LOW,  0)
-    const high = new cv.Scalar(H_HIGH, S_HIGH, V_HIGH, 255)
+    // cv.inRange in OpenCV.js requires Mat bounds, not Scalar.
+    // Use 1×1 single-channel Mats; inRange broadcasts them to the full frame.
+    const low  = cv.matFromArray(1, 1, cv.CV_8UC3, [H_LOW,  S_LOW,  V_LOW])
+    const high = cv.matFromArray(1, 1, cv.CV_8UC3, [H_HIGH, S_HIGH, V_HIGH])
     cv.inRange(hsv, low, high, mask)
+    low.delete()
+    high.delete()
 
     // Remove speckle noise, fill small holes
     cv.morphologyEx(mask, morphed, cv.MORPH_OPEN,  kernel)

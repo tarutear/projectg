@@ -56,8 +56,9 @@ export interface OpenCV {
   MORPH_CLOSE: number
   MORPH_ELLIPSE: number
 
+  matFromArray(rows: number, cols: number, type: number, array: number[]): CvMat
   cvtColor(src: CvMat, dst: CvMat, code: number): void
-  inRange(src: CvMat, lowerb: CvScalar, upperb: CvScalar, dst: CvMat): void
+  inRange(src: CvMat, lowerb: CvMat, upperb: CvMat, dst: CvMat): void
   findContours(
     image: CvMat,
     contours: CvMatVector,
