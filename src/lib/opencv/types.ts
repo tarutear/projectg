@@ -59,7 +59,7 @@ export interface OpenCV {
   matFromArray(rows: number, cols: number, type: number, array: number[]): CvMat
   countNonZero(src: CvMat): number
   cvtColor(src: CvMat, dst: CvMat, code: number): void
-  inRange(src: CvMat, lowerb: CvMat, upperb: CvMat, dst: CvMat): void
+  inRange(src: CvMat, lowerb: CvMat | CvScalar, upperb: CvMat | CvScalar, dst: CvMat): void
   findContours(
     image: CvMat,
     contours: CvMatVector,

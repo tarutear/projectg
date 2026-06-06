@@ -1,4 +1,4 @@
-import type { OpenCV, CvMat } from './types'
+import type { OpenCV } from './types'
 
 // HSV range for yellow markers (OpenCV: H 0–180, S/V 0–255).
 // Widened to handle different lighting conditions and shades of yellow.
@@ -27,19 +27,17 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
   const contours = new cv.MatVector()
   const hierarchy = new cv.Mat()
   const kernel   = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5))
-  let lowerMat: CvMat | null = null
-  let upperMat: CvMat | null = null
   const results: RawMarker[] = []
 
   try {
     cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR)
     cv.cvtColor(bgr, hsv, cv.COLOR_BGR2HSV)
 
-    // Create full-size bound Mats — most reliable for cv.inRange in OpenCV.js.
-    // 1×1 mats may not broadcast; filling at full resolution avoids that risk.
-    lowerMat = new cv.Mat(hsv.rows, hsv.cols, cv.CV_8UC3, new cv.Scalar(H_LOW,  S_LOW,  V_LOW,  0))
-    upperMat = new cv.Mat(hsv.rows, hsv.cols, cv.CV_8UC3, new cv.Scalar(H_HIGH, S_HIGH, V_HIGH, 0))
-    cv.inRange(hsv, lowerMat, upperMat, mask)
+    // Official OpenCV.js pattern: pass 3-element Scalar directly to inRange.
+    // 4-element Scalar (with alpha) causes BindingError on 3-channel HSV Mats.
+    const low  = new cv.Scalar(H_LOW,  S_LOW,  V_LOW)
+    const high = new cv.Scalar(H_HIGH, S_HIGH, V_HIGH)
+    cv.inRange(hsv, low, high, mask)
 
     const nonZero = cv.countNonZero(mask)
     if (++_debugFrame % 30 === 0) {
@@ -71,7 +69,6 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
     src.delete(); bgr.delete(); hsv.delete()
     mask.delete(); morphed.delete()
     contours.delete(); hierarchy.delete(); kernel.delete()
-    lowerMat?.delete(); upperMat?.delete()
   }
 
   return results
