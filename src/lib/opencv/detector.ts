@@ -1,14 +1,16 @@
-import type { OpenCV } from './types'
+import type { OpenCV, CvMat } from './types'
 
-// HSV range for 20 mm yellow circular markers under typical indoor lighting.
-// OpenCV uses H: 0-180, S/V: 0-255.
-const H_LOW = 18,  H_HIGH = 38
-const S_LOW = 80,  S_HIGH = 255
-const V_LOW = 80,  V_HIGH = 255
+// HSV range for yellow markers (OpenCV: H 0–180, S/V 0–255).
+// Widened to handle different lighting conditions and shades of yellow.
+const H_LOW = 15,  H_HIGH = 45
+const S_LOW = 50,  S_HIGH = 255
+const V_LOW = 50,  V_HIGH = 255
 
-const MIN_RADIUS = 4    // px — ignore tiny noise
-const MAX_RADIUS = 120  // px — ignore very large blobs
-const MIN_CIRCULARITY = 0.45
+const MIN_RADIUS = 3    // px
+const MAX_RADIUS = 150  // px
+const MIN_CIRCULARITY = 0.3
+
+let _debugFrame = 0
 
 export interface RawMarker {
   x: number
@@ -25,21 +27,25 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
   const contours = new cv.MatVector()
   const hierarchy = new cv.Mat()
   const kernel   = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5))
+  let lowerMat: CvMat | null = null
+  let upperMat: CvMat | null = null
   const results: RawMarker[] = []
 
   try {
     cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR)
     cv.cvtColor(bgr, hsv, cv.COLOR_BGR2HSV)
 
-    // cv.inRange in OpenCV.js requires Mat bounds, not Scalar.
-    // Use 1×1 single-channel Mats; inRange broadcasts them to the full frame.
-    const low  = cv.matFromArray(1, 1, cv.CV_8UC3, [H_LOW,  S_LOW,  V_LOW])
-    const high = cv.matFromArray(1, 1, cv.CV_8UC3, [H_HIGH, S_HIGH, V_HIGH])
-    cv.inRange(hsv, low, high, mask)
-    low.delete()
-    high.delete()
+    // Create full-size bound Mats — most reliable for cv.inRange in OpenCV.js.
+    // 1×1 mats may not broadcast; filling at full resolution avoids that risk.
+    lowerMat = new cv.Mat(hsv.rows, hsv.cols, cv.CV_8UC3, new cv.Scalar(H_LOW,  S_LOW,  V_LOW,  0))
+    upperMat = new cv.Mat(hsv.rows, hsv.cols, cv.CV_8UC3, new cv.Scalar(H_HIGH, S_HIGH, V_HIGH, 0))
+    cv.inRange(hsv, lowerMat, upperMat, mask)
 
-    // Remove speckle noise, fill small holes
+    const nonZero = cv.countNonZero(mask)
+    if (++_debugFrame % 30 === 0) {
+      console.log(`[detector] frame=${_debugFrame} nonZero=${nonZero} size=${hsv.cols}x${hsv.rows}`)
+    }
+
     cv.morphologyEx(mask, morphed, cv.MORPH_OPEN,  kernel)
     cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE, kernel)
 
@@ -54,7 +60,6 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
       const radius = Math.sqrt(area / Math.PI)
 
       if (radius < MIN_RADIUS || radius > MAX_RADIUS) continue
-      // Circularity: ratio of contour area to enclosing-circle area
       if (area / (Math.PI * radius * radius) < MIN_CIRCULARITY) continue
 
       const m = cv.moments(cnt)
@@ -66,6 +71,7 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
     src.delete(); bgr.delete(); hsv.delete()
     mask.delete(); morphed.delete()
     contours.delete(); hierarchy.delete(); kernel.delete()
+    lowerMat?.delete(); upperMat?.delete()
   }
 
   return results
