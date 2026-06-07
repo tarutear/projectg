@@ -16,8 +16,8 @@ export default function Home() {
   const { videoRef } = useCamera()
   useMarkerTracking(videoRef)
 
-  const { tracked, manual, workerState, latencyMs, addManual } = useMarkerStore()
-  const totalMarkers = tracked.length + manual.length
+  const { tracked, confirmedIds, workerState, latencyMs, confirmMarker } = useMarkerStore()
+  const totalMarkers = confirmedIds.length
 
   return (
     <main className="min-h-screen bg-gray-950 text-white">
@@ -47,13 +47,13 @@ export default function Home() {
           <div className="flex-1 min-w-0">
             <div className="mb-2 flex items-center gap-2">
               <CameraSelector />
-              {workerState === 'ready' && (
-                <span className="text-xs text-gray-500 ml-auto">
-                  Click video to place marker manually
+              {workerState === 'ready' && tracked.length > 0 && confirmedIds.length === 0 && (
+                <span className="text-xs text-yellow-600 ml-auto animate-pulse">
+                  Click on a marker to confirm it
                 </span>
               )}
             </div>
-            <CameraView videoRef={videoRef} onCanvasClick={addManual} />
+            <CameraView videoRef={videoRef} onMarkerConfirm={confirmMarker} />
             <AngleTimelineChart />
             <DistanceTimelineChart />
           </div>
@@ -66,7 +66,7 @@ export default function Home() {
 
             <section className="bg-gray-900 rounded-lg p-3">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
-                Markers ({totalMarkers})
+                Markers {totalMarkers > 0 ? `(${totalMarkers} confirmed)` : ''}
               </h2>
               <MarkerList />
             </section>

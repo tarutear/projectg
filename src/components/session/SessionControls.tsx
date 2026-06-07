@@ -1,10 +1,12 @@
 'use client'
 
 import { useSessionStore } from '@/store/sessionStore'
+import { useMarkerStore } from '@/store/markerStore'
 import { sessionToCsv, downloadCsv } from '@/lib/export/csvExporter'
 
 export function SessionControls() {
   const { current, isRecording, startSession, stopSession } = useSessionStore()
+  const names = useMarkerStore((s) => s.names)
 
   return (
     <div className="flex items-center gap-2">
@@ -28,7 +30,8 @@ export function SessionControls() {
           onClick={() => {
             const ts = new Date(current.startedAt)
               .toISOString().slice(0, 16).replace('T', '_').replace(':', '-')
-            downloadCsv(sessionToCsv(current), `motion-${ts}.csv`)
+            const nameMap = Object.fromEntries(names.map((n) => [n.markerId, n.name]))
+            downloadCsv(sessionToCsv(current, nameMap), `motion-${ts}.csv`)
           }}
           className="text-xs bg-gray-600 hover:bg-gray-500 rounded py-1.5 px-3"
         >

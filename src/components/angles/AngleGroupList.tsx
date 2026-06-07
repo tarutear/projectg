@@ -6,12 +6,11 @@ import { angleDeg, distancePx } from '@/lib/motion/geometry'
 
 export function AngleGroupList() {
   const { groups, removeGroup, mmPerPx } = useAngleStore()
-  const { tracked, manual } = useMarkerStore()
+  const { tracked } = useMarkerStore()
 
-  const posMap = new Map<number, { x: number; y: number }>([
-    ...tracked.map((m) => [m.id, { x: m.x, y: m.y }] as [number, { x: number; y: number }]),
-    ...manual.map((m)  => [m.id, { x: m.x, y: m.y }] as [number, { x: number; y: number }]),
-  ])
+  const posMap = new Map<number, { x: number; y: number }>(
+    tracked.map((m) => [m.id, { x: m.x, y: m.y }])
+  )
 
   if (groups.length === 0) return <p className="text-xs text-gray-500 mt-1">No groups yet.</p>
 

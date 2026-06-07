@@ -16,7 +16,7 @@ export class KalmanFilter2D {
     this.x = x; this.y = y
   }
 
-  update(mx: number, my: number): { x: number; y: number } {
+  update(mx: number, my: number): { x: number; y: number; vx: number; vy: number } {
     // Predict
     const xp  = this.x + this.vx
     const yp  = this.y + this.vy
@@ -39,7 +39,7 @@ export class KalmanFilter2D {
     this.pvx += this.q
     this.pvy += this.q
 
-    return { x: this.x, y: this.y }
+    return { x: this.x, y: this.y, vx: this.vx, vy: this.vy }
   }
 
   predict(): { x: number; y: number } {

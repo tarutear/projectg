@@ -7,51 +7,44 @@ export interface MarkerName {
   name: string
 }
 
-export interface ManualMarker {
-  id: number
-  x: number
-  y: number
-  radius: number
-}
-
 interface MarkerStore {
   tracked: TrackedMarker[]
+  confirmedIds: number[]
   names: MarkerName[]
-  manual: ManualMarker[]
   workerState: WorkerState
   latencyMs: number
 
   setTracked: (markers: TrackedMarker[]) => void
+  confirmMarker: (id: number) => void
+  unconfirmMarker: (id: number) => void
   setName: (markerId: number, name: string) => void
   removeName: (markerId: number) => void
-  addManual: (x: number, y: number) => void
-  removeManual: (id: number) => void
   setWorkerState: (s: WorkerState) => void
   setLatency: (ms: number) => void
   reset: () => void
 }
 
-let manualSeq = 1000
-
 export const useMarkerStore = create<MarkerStore>((set) => ({
   tracked: [],
+  confirmedIds: [],
   names: [],
-  manual: [],
   workerState: 'idle',
   latencyMs: 0,
 
   setTracked: (tracked) => set({ tracked }),
+  confirmMarker: (id) =>
+    set((s) =>
+      s.confirmedIds.includes(id) ? s : { confirmedIds: [...s.confirmedIds, id] }
+    ),
+  unconfirmMarker: (id) =>
+    set((s) => ({ confirmedIds: s.confirmedIds.filter((i) => i !== id) })),
   setName: (markerId, name) =>
     set((s) => ({
       names: [...s.names.filter((n) => n.markerId !== markerId), { markerId, name }],
     })),
   removeName: (markerId) =>
     set((s) => ({ names: s.names.filter((n) => n.markerId !== markerId) })),
-  addManual: (x, y) =>
-    set((s) => ({ manual: [...s.manual, { id: manualSeq++, x, y, radius: 12 }] })),
-  removeManual: (id) =>
-    set((s) => ({ manual: s.manual.filter((m) => m.id !== id) })),
   setWorkerState: (workerState) => set({ workerState }),
   setLatency: (latencyMs) => set({ latencyMs }),
-  reset: () => set({ tracked: [], names: [], manual: [], latencyMs: 0 }),
+  reset: () => set({ tracked: [], confirmedIds: [], names: [], latencyMs: 0 }),
 }))

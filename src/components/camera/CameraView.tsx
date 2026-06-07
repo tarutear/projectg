@@ -7,16 +7,20 @@ import { useMarkerStore } from '@/store/markerStore'
 import { useAngleStore } from '@/store/angleStore'
 import { angleDeg, distancePx } from '@/lib/motion/geometry'
 
+const CLICK_RADIUS = 48  // px in canvas coords — how close a click must be to confirm
+
 interface Props {
   videoRef: RefObject<HTMLVideoElement>
-  onCanvasClick?: (x: number, y: number) => void
+  onMarkerConfirm?: (id: number) => void
 }
 
-export function CameraView({ videoRef, onCanvasClick }: Props) {
+export function CameraView({ videoRef, onMarkerConfirm }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { error, stream } = useCameraStore()
-  const { tracked, names, manual } = useMarkerStore()
+  const { tracked, confirmedIds, names } = useMarkerStore()
   const { groups, mmPerPx } = useAngleStore()
+
+  const confirmedSet = new Set(confirmedIds)
 
   // Keep canvas pixel dimensions in sync with the video native resolution
   useEffect(() => {
@@ -45,11 +49,8 @@ export function CameraView({ videoRef, onCanvasClick }: Props) {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     const nameMap = new Map(names.map((n) => [n.markerId, n.name]))
-    const allMarkers = [
-      ...tracked.map((m) => ({ id: m.id, x: m.x, y: m.y, radius: m.radius, faded: m.missingFrames > 0 })),
-      ...manual.map((m)  => ({ id: m.id, x: m.x, y: m.y, radius: m.radius, faded: false })),
-    ]
-    const posMap = new Map(allMarkers.map((m) => [m.id, m]))
+    const hasConfirmed = confirmedIds.length > 0
+    const posMap = new Map(tracked.map((m) => [m.id, m]))
 
     // Draw angle / distance group lines
     for (const g of groups) {
@@ -71,39 +72,70 @@ export function CameraView({ videoRef, onCanvasClick }: Props) {
       } else if (g.type === 'distance' && pts.length === 2) {
         const px  = distancePx(pts[0]!, pts[1]!)
         const val = mmPerPx ? `${(px * mmPerPx).toFixed(1)} mm` : `${px.toFixed(0)} px`
-        drawBadge(
-          ctx, val,
-          (pts[0]!.x + pts[1]!.x) / 2,
-          (pts[0]!.y + pts[1]!.y) / 2 - 14,
-          '#93c5fd'
-        )
+        drawBadge(ctx, val, (pts[0]!.x + pts[1]!.x) / 2, (pts[0]!.y + pts[1]!.y) / 2 - 14, '#93c5fd')
       }
     }
 
     // Draw marker circles
-    for (const m of allMarkers) {
-      const alpha = m.faded ? 0.3 : 0.9
+    for (const m of tracked) {
+      const isConfirmed = confirmedSet.has(m.id)
+      const isGhost     = m.missingFrames > 0
+
+      if (hasConfirmed && !isConfirmed) {
+        // Unconfirmed markers: small dim dashed ring — still clickable for confirmation
+        const r = Math.max(m.radius, 8)
+        ctx.beginPath()
+        ctx.arc(m.x, m.y, r, 0, Math.PI * 2)
+        ctx.strokeStyle = 'rgba(250,204,21,0.25)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 4])
+        ctx.stroke()
+        ctx.setLineDash([])
+        continue
+      }
+
+      // Confirmed (or detection phase where all shown equally)
+      const alpha = isGhost ? 0.3 : (isConfirmed ? 1.0 : 0.75)
       const r     = Math.max(m.radius, 8)
+
       ctx.beginPath()
       ctx.arc(m.x, m.y, r, 0, Math.PI * 2)
-      ctx.strokeStyle = `rgba(250,204,21,${alpha})`
-      ctx.lineWidth = 2
+      ctx.strokeStyle = isConfirmed
+        ? `rgba(74,222,128,${alpha})`   // green for confirmed
+        : `rgba(250,204,21,${alpha})`   // yellow for detection phase
+      ctx.lineWidth = isConfirmed ? 2.5 : 2
       ctx.stroke()
-      if (!m.faded) {
-        ctx.fillStyle = 'rgba(250,204,21,0.10)'
+
+      if (!isGhost) {
+        ctx.fillStyle = isConfirmed
+          ? 'rgba(74,222,128,0.10)'
+          : 'rgba(250,204,21,0.10)'
         ctx.fill()
       }
-      drawBadge(ctx, nameMap.get(m.id) ?? `#${m.id}`, m.x, m.y - r - 4, '#fde68a')
+
+      const label = nameMap.get(m.id) ?? `#${m.id}`
+      const badgeColor = isConfirmed ? '#86efac' : '#fde68a'
+      drawBadge(ctx, label, m.x, m.y - r - 4, badgeColor)
     }
-  }, [tracked, manual, names, groups, mmPerPx])
+  }, [tracked, confirmedIds, names, groups, mmPerPx])
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onCanvasClick || !canvasRef.current) return
+    if (!onMarkerConfirm || !canvasRef.current) return
     const canvas = canvasRef.current
     const rect   = canvas.getBoundingClientRect()
     const x = (e.clientX - rect.left)  * (canvas.width  / rect.width)
     const y = (e.clientY - rect.top)   * (canvas.height / rect.height)
-    onCanvasClick(x, y)
+
+    // Find nearest visible (non-ghost) tracked marker within click radius
+    let bestId = -1, bestDist = CLICK_RADIUS
+    for (const m of tracked) {
+      if (m.missingFrames > 0) continue
+      const dx = m.x - x, dy = m.y - y
+      const d  = Math.sqrt(dx * dx + dy * dy)
+      if (d < bestDist) { bestDist = d; bestId = m.id }
+    }
+
+    if (bestId >= 0) onMarkerConfirm(bestId)
   }
 
   if (error) {
@@ -128,7 +160,7 @@ export function CameraView({ videoRef, onCanvasClick }: Props) {
       />
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full cursor-crosshair"
+        className="absolute inset-0 w-full h-full cursor-pointer"
         onClick={handleClick}
       />
       {!stream && (

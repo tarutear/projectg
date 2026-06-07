@@ -18,6 +18,7 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
   const setTracked     = useMarkerStore((s) => s.setTracked)
   const setWorkerState = useMarkerStore((s) => s.setWorkerState)
   const setLatency     = useMarkerStore((s) => s.setLatency)
+  const confirmedIds   = useMarkerStore((s) => s.confirmedIds)
 
   const isRecording = useSessionStore((s) => s.isRecording)
   const addFrame    = useSessionStore((s) => s.addFrame)
@@ -30,7 +31,8 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
 
   const handleResult = useCallback(
     (rawMarkers: RawMarker[], frameId: number, latencyMs: number) => {
-      const remapped = remapMarkers(trackedRef.current, rawMarkers, frameId)
+      const confirmedSet = confirmedIds.length > 0 ? new Set(confirmedIds) : undefined
+      const remapped = remapMarkers(trackedRef.current, rawMarkers, frameId, confirmedSet)
 
       const smoothed = remapped.map((m) => {
         if (m.missingFrames > 0) return m
@@ -51,7 +53,13 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
 
       if (!isRecording || !sessionId) return
 
-      const pos = new Map(smoothed.map((m) => [m.id, { x: m.x, y: m.y }]))
+      // Only record positions of confirmed markers (or all if none confirmed yet)
+      const recordSet = confirmedIds.length > 0 ? new Set(confirmedIds) : null
+      const pos = new Map(
+        smoothed
+          .filter((m) => !recordSet || recordSet.has(m.id))
+          .map((m) => [m.id, { x: m.x, y: m.y }])
+      )
       const angles: Record<string, number> = {}
       for (const g of groups) {
         const pts = g.markerIds.map((id) => pos.get(id))
@@ -68,7 +76,7 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
         markerPositions: Object.fromEntries(pos),
       })
     },
-    [setTracked, setLatency, isRecording, sessionId, groups, addFrame]
+    [setTracked, setLatency, isRecording, sessionId, groups, addFrame, confirmedIds]
   )
 
   onResult(handleResult)

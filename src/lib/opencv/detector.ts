@@ -8,7 +8,7 @@ const V_LOW = 80,  V_HIGH = 255
 
 const MIN_RADIUS = 8    // px — filter noise specks
 const MAX_RADIUS = 150  // px
-const MIN_CIRCULARITY = 0.6
+const MIN_CIRCULARITY = 0.45  // relaxed from 0.6 to tolerate motion-blur distortion
 
 let _debugFrame = 0
 
@@ -26,7 +26,7 @@ export function detectYellowMarkers(cv: OpenCV, imageData: ImageData): RawMarker
   const morphed  = new cv.Mat()
   const contours = new cv.MatVector()
   const hierarchy = new cv.Mat()
-  const kernel   = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(7, 7))
+  const kernel   = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5))
   let lowerMat: CvMat | null = null
   let upperMat: CvMat | null = null
   const results: RawMarker[] = []

@@ -11,10 +11,12 @@ export function AngleGroupBuilder() {
   const [selected, setSelected] = useState<number[]>([])
 
   const { addGroup } = useAngleStore()
-  const { tracked, names, manual } = useMarkerStore()
+  const { tracked, confirmedIds, names } = useMarkerStore()
   const nameMap = new Map(names.map((n) => [n.markerId, n.name]))
 
-  const all      = [...tracked.map((m) => m.id), ...manual.map((m) => m.id)]
+  // Show confirmed markers in group builder; fall back to all tracked if none confirmed yet
+  const ids = confirmedIds.length > 0 ? confirmedIds : tracked.map((m) => m.id)
+  const all = ids
   const required = type === 'angle' ? 3 : 2
 
   const toggle = (id: number) =>
