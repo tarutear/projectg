@@ -43,7 +43,7 @@ export function useVisionWorker() {
     const opencvUrl =
       process.env.NEXT_PUBLIC_OPENCV_URL ??
       (process.env.NODE_ENV === 'production'
-        ? 'https://docs.opencv.org/4.x/opencv.js'
+        ? 'https://cdn.jsdelivr.net/npm/opencv.js'
         : '/opencv/opencv.js')
     worker.postMessage({ type: 'INIT', opencvUrl })
 
