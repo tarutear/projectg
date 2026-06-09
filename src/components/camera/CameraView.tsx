@@ -5,6 +5,7 @@ import type { RefObject } from 'react'
 import { useCameraStore } from '@/store/cameraStore'
 import { useMarkerStore } from '@/store/markerStore'
 import { useAngleStore } from '@/store/angleStore'
+import { useCoordinateStore, estimatePxPerCm } from '@/store/coordinateStore'
 import { angleDeg, distancePx } from '@/lib/motion/geometry'
 
 const CLICK_RADIUS = 48  // px in canvas coords — how close a click must be to confirm
@@ -19,6 +20,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
   const { error, stream } = useCameraStore()
   const { tracked, confirmedIds, names } = useMarkerStore()
   const { groups, mmPerPx } = useAngleStore()
+  const { enabled: coordEnabled } = useCoordinateStore()
 
   const confirmedSet = new Set(confirmedIds)
 
@@ -48,6 +50,15 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
+    // Mirror x coordinates so the canvas matches the CSS-mirrored video
+    const W = canvas.width
+    const mx = (x: number) => W - x
+
+    // Estimate live pxPerCm from confirmed markers' radii
+    const confirmedSet2 = new Set(confirmedIds)
+    const confirmedRadii = tracked.filter((m) => confirmedSet2.has(m.id)).map((m) => m.radius)
+    const livePxPerCm = estimatePxPerCm(confirmedRadii)
+
     const nameMap = new Map(names.map((n) => [n.markerId, n.name]))
     const hasConfirmed = confirmedIds.length > 0
     const posMap = new Map(tracked.map((m) => [m.id, m]))
@@ -61,18 +72,25 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
       ctx.strokeStyle = 'rgba(96,165,250,0.75)'
       ctx.lineWidth = 2
       ctx.setLineDash([6, 3])
-      ctx.moveTo(pts[0]!.x, pts[0]!.y)
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y)
+      ctx.moveTo(mx(pts[0]!.x), pts[0]!.y)
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(mx(pts[i]!.x), pts[i]!.y)
       ctx.stroke()
       ctx.setLineDash([])
 
       if (g.type === 'angle' && pts.length === 3) {
         const val = angleDeg(pts[0]!, pts[1]!, pts[2]!).toFixed(1)
-        drawBadge(ctx, `${val}°`, pts[1]!.x, pts[1]!.y - Math.max(pts[1]!.radius, 16) - 4, '#93c5fd')
+        drawBadge(ctx, `${val}°`, mx(pts[1]!.x), pts[1]!.y - Math.max(pts[1]!.radius, 16) - 4, '#93c5fd')
       } else if (g.type === 'distance' && pts.length === 2) {
         const px  = distancePx(pts[0]!, pts[1]!)
-        const val = mmPerPx ? `${(px * mmPerPx).toFixed(1)} mm` : `${px.toFixed(0)} px`
-        drawBadge(ctx, val, (pts[0]!.x + pts[1]!.x) / 2, (pts[0]!.y + pts[1]!.y) / 2 - 14, '#93c5fd')
+        let val: string
+        if (coordEnabled && livePxPerCm) {
+          val = `${(px / livePxPerCm).toFixed(2)} cm`
+        } else if (mmPerPx) {
+          val = `${(px * mmPerPx).toFixed(1)} mm`
+        } else {
+          val = `${px.toFixed(0)} px`
+        }
+        drawBadge(ctx, val, mx((pts[0]!.x + pts[1]!.x) / 2), (pts[0]!.y + pts[1]!.y) / 2 - 14, '#93c5fd')
       }
     }
 
@@ -85,7 +103,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
         // Unconfirmed markers: small dim dashed ring — still clickable for confirmation
         const r = Math.max(m.radius, 8)
         ctx.beginPath()
-        ctx.arc(m.x, m.y, r, 0, Math.PI * 2)
+        ctx.arc(mx(m.x), m.y, r, 0, Math.PI * 2)
         ctx.strokeStyle = 'rgba(250,204,21,0.25)'
         ctx.lineWidth = 1.5
         ctx.setLineDash([4, 4])
@@ -99,7 +117,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
       const r     = Math.max(m.radius, 8)
 
       ctx.beginPath()
-      ctx.arc(m.x, m.y, r, 0, Math.PI * 2)
+      ctx.arc(mx(m.x), m.y, r, 0, Math.PI * 2)
       ctx.strokeStyle = isConfirmed
         ? `rgba(74,222,128,${alpha})`   // green for confirmed
         : `rgba(250,204,21,${alpha})`   // yellow for detection phase
@@ -115,15 +133,16 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
 
       const label = nameMap.get(m.id) ?? `#${m.id}`
       const badgeColor = isConfirmed ? '#86efac' : '#fde68a'
-      drawBadge(ctx, label, m.x, m.y - r - 4, badgeColor)
+      drawBadge(ctx, label, mx(m.x), m.y - r - 4, badgeColor)
     }
-  }, [tracked, confirmedIds, names, groups, mmPerPx])
+  }, [tracked, confirmedIds, names, groups, mmPerPx, coordEnabled])
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onMarkerConfirm || !canvasRef.current) return
     const canvas = canvasRef.current
     const rect   = canvas.getBoundingClientRect()
-    const x = (e.clientX - rect.left)  * (canvas.width  / rect.width)
+    // Mirror x to match the CSS-mirrored video
+    const x = canvas.width - (e.clientX - rect.left) * (canvas.width  / rect.width)
     const y = (e.clientY - rect.top)   * (canvas.height / rect.height)
 
     // Find nearest visible (non-ghost) tracked marker within click radius
@@ -157,6 +176,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
         playsInline
         muted
         className="w-full h-full object-contain"
+        style={{ transform: 'scaleX(-1)' }}
       />
       <canvas
         ref={canvasRef}

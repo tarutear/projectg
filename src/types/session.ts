@@ -12,4 +12,6 @@ export interface Session {
   startedAt: number
   endedAt?: number
   frames: FrameData[]
+  /** true when recorded with reference coordinate mode (x right=+, y up=+, unit=cm) */
+  coordMode?: boolean
 }

@@ -1,22 +1,47 @@
 'use client'
 
+import { useState, useCallback } from 'react'
 import { useCamera } from '@/hooks/useCamera'
 import { useMarkerTracking } from '@/hooks/useMarkerTracking'
 import { useMarkerStore } from '@/store/markerStore'
+import { useReplay } from '@/hooks/useReplay'
+import { deleteSession } from '@/lib/storage/indexeddb'
 import { CameraView } from '@/components/camera/CameraView'
 import { CameraSelector } from '@/components/camera/CameraSelector'
 import { MarkerList } from '@/components/markers/MarkerList'
 import { AngleGroupBuilder } from '@/components/angles/AngleGroupBuilder'
 import { AngleGroupList } from '@/components/angles/AngleGroupList'
 import { SessionControls } from '@/components/session/SessionControls'
+import { ReplayModal } from '@/components/session/ReplayModal'
 import { AngleTimelineChart } from '@/components/charts/AngleTimelineChart'
 import { DistanceTimelineChart } from '@/components/charts/DistanceTimelineChart'
 
 export default function Home() {
   const { videoRef } = useCamera()
-  useMarkerTracking(videoRef)
+  const { resetTracking } = useMarkerTracking(videoRef)
 
   const { tracked, confirmedIds, workerState, latencyMs, confirmMarker } = useMarkerStore()
+  const names = useMarkerStore((s) => s.names)
+  const markerNames = Object.fromEntries(names.map((n) => [n.markerId, n.name]))
+
+  const [replayOpen, setReplayOpen] = useState(false)
+  const replay = useReplay()
+
+  const handleOpenReplay = useCallback(async () => {
+    await replay.loadSessions()
+    setReplayOpen(true)
+  }, [replay])
+
+  const handleCloseReplay = useCallback(() => {
+    replay.closeSession()
+    setReplayOpen(false)
+  }, [replay])
+
+  const handleDeleteSession = useCallback(async (id: string) => {
+    await deleteSession(id)
+    await replay.loadSessions()
+    if (replay.session?.id === id) replay.closeSession()
+  }, [replay])
   const totalMarkers = confirmedIds.length
 
   return (
@@ -61,7 +86,7 @@ export default function Home() {
           {/* Sidebar */}
           <aside className="w-72 shrink-0 space-y-4">
             <section className="bg-gray-900 rounded-lg p-3">
-              <SessionControls />
+              <SessionControls onOpenReplay={handleOpenReplay} onReset={resetTracking} />
             </section>
 
             <section className="bg-gray-900 rounded-lg p-3">
@@ -81,6 +106,23 @@ export default function Home() {
           </aside>
         </div>
       </div>
+
+      {replayOpen && (
+        <ReplayModal
+          sessions={replay.sessions}
+          session={replay.session}
+          frameIndex={replay.frameIndex}
+          isPlaying={replay.isPlaying}
+          speed={replay.speed}
+          markerNames={markerNames}
+          onOpen={replay.openSession}
+          onClose={handleCloseReplay}
+          onSeek={replay.seek}
+          onTogglePlay={replay.togglePlay}
+          onSpeedChange={replay.setSpeed}
+          onDeleteSession={handleDeleteSession}
+        />
+      )}
     </main>
   )
 }

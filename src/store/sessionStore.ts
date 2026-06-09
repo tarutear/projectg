@@ -7,7 +7,7 @@ interface SessionStore {
   current: Session | null
   isRecording: boolean
 
-  startSession: (name?: string) => void
+  startSession: (name?: string, coordMode?: boolean) => void
   stopSession: () => Promise<void>
   addFrame: (f: FrameData) => void
   reset: () => void
@@ -17,9 +17,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   current: null,
   isRecording: false,
 
-  startSession: (name = 'Session') => {
+  startSession: (name = 'Session', coordMode = false) => {
     set({
-      current: { id: nanoid(), name, startedAt: Date.now(), frames: [] },
+      current: { id: nanoid(), name, startedAt: Date.now(), frames: [], coordMode },
       isRecording: true,
     })
   },

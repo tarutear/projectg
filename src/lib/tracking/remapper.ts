@@ -21,6 +21,8 @@ const VELOCITY_DECAY  = 0.85  // per-frame velocity decay for ghost prediction
 
 let nextId = 1
 
+export function resetRemapper() { nextId = 1 }
+
 /** Predict ghost marker position with decaying velocity.
  *  Uses geometric-series sum so prediction converges instead of drifting unboundedly. */
 function predictPos(m: TrackedMarker): { x: number; y: number } {

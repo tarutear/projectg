@@ -21,6 +21,7 @@ interface MarkerStore {
   removeName: (markerId: number) => void
   setWorkerState: (s: WorkerState) => void
   setLatency: (ms: number) => void
+  resetTracking: () => void
   reset: () => void
 }
 
@@ -46,5 +47,7 @@ export const useMarkerStore = create<MarkerStore>((set) => ({
     set((s) => ({ names: s.names.filter((n) => n.markerId !== markerId) })),
   setWorkerState: (workerState) => set({ workerState }),
   setLatency: (latencyMs) => set({ latencyMs }),
+  // Reset tracking state (confirmedIds + tracked) while keeping marker names
+  resetTracking: () => set({ tracked: [], confirmedIds: [] }),
   reset: () => set({ tracked: [], confirmedIds: [], names: [], latencyMs: 0 }),
 }))
