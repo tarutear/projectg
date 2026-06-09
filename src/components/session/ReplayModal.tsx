@@ -161,6 +161,40 @@ interface ReplayModalProps {
   onDeleteSession?: (id: string) => void
 }
 
+interface Displacement {
+  id: number
+  name: string
+  dx: number
+  dy: number
+  dist: number
+  unit: string
+}
+
+function computeDisplacements(
+  session: Session,
+  frameIndex: number,
+  markerNames: Record<number, string>,
+): Displacement[] {
+  if (session.frames.length === 0) return []
+  const frame0 = session.frames[0]
+  const frameN = session.frames[frameIndex]
+  const coordMode = session.coordMode ?? false
+  const unit = coordMode ? 'cm' : 'px'
+
+  return Object.entries(frameN.markerPositions).flatMap(([idStr, pos]) => {
+    const id = Number(idStr)
+    const origin = frame0.markerPositions[id]
+    if (!origin) return []
+    const rawDx = pos.x - origin.x
+    const rawDy = pos.y - origin.y
+    // For coordMode=false (pixel), mirror x to match visual display direction
+    const dx = coordMode ? rawDx : -rawDx
+    const dy = rawDy
+    const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy)
+    return [{ id, name: markerNames[id] ?? `M${id}`, dx, dy, dist, unit }]
+  })
+}
+
 export function ReplayModal({
   sessions,
   session,
@@ -181,6 +215,10 @@ export function ReplayModal({
     if (!session || session.frames.length < 2) return '-'
     return formatTimestamp(session.frames, session.frames.length - 1)
   }, [session])
+
+  const displacements = useMemo(() =>
+    session ? computeDisplacements(session, frameIndex, markerNames) : [],
+  [session, frameIndex, markerNames])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -262,6 +300,47 @@ export function ReplayModal({
           {/* Controls */}
           {session && session.frames.length > 0 && (
             <div className="shrink-0 border-t border-gray-800 px-4 py-3 space-y-2">
+              {/* Displacement from start */}
+              {displacements.length > 0 && (
+                <div className="border-b border-gray-800/60 pb-2">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">
+                    초기 위치 대비 이동
+                    {session.coordMode && (
+                      <span className="ml-1 text-gray-600">(오른쪽/위 = +)</span>
+                    )}
+                  </p>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {displacements.map((d) => (
+                      <div key={d.id} className="flex items-center gap-1 text-[10px] font-mono">
+                        <span
+                          className="w-16 truncate font-sans font-semibold shrink-0"
+                          style={{ color: markerColor(d.id) }}
+                        >
+                          {d.name}
+                        </span>
+                        {session.coordMode ? (
+                          <>
+                            <span className={`w-20 text-right ${d.dx >= 0 ? 'text-sky-300' : 'text-orange-300'}`}>
+                              Δx {d.dx >= 0 ? '+' : ''}{d.dx.toFixed(2)}{d.unit}
+                            </span>
+                            <span className={`w-20 text-right ${d.dy >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                              Δy {d.dy >= 0 ? '+' : ''}{d.dy.toFixed(2)}{d.unit}
+                            </span>
+                            <span className="w-20 text-right text-yellow-300 font-semibold">
+                              {d.dist.toFixed(2)}{d.unit}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-yellow-300 font-semibold">
+                            {d.dist.toFixed(0)}{d.unit} 이동
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Scrubber */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-500 tabular-nums w-12 text-right">
@@ -282,21 +361,18 @@ export function ReplayModal({
 
               {/* Buttons */}
               <div className="flex items-center gap-2">
-                {/* Rewind */}
                 <button
                   onClick={() => onSeek(0)}
                   className="text-gray-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800"
                 >
                   ⏮
                 </button>
-                {/* Play/Pause */}
                 <button
                   onClick={onTogglePlay}
                   className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-4 py-1 rounded font-medium"
                 >
                   {isPlaying ? '⏸ 일시정지' : '▶ 재생'}
                 </button>
-                {/* Speed */}
                 <div className="ml-auto flex gap-1">
                   {([0.5, 1, 2] as PlaybackSpeed[]).map((s) => (
                     <button
@@ -312,7 +388,6 @@ export function ReplayModal({
                     </button>
                   ))}
                 </div>
-                {/* Frame info */}
                 <span className="text-[10px] text-gray-600 tabular-nums">
                   {frameIndex + 1} / {session.frames.length}
                 </span>
