@@ -3,19 +3,28 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Serve the OpenCV JS wrapper with the correct MIME type
-        source: '/opencv/:path*.js',
+        // Cross-Origin Isolation headers — required for WASM threads and
+        // SharedArrayBuffer in modern browsers. Applied to all routes.
+        source: '/(.*)',
         headers: [
-          { key: 'Content-Type', value: 'application/javascript' },
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'Cross-Origin-Opener-Policy',   value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy',  value: 'credentialless' },
         ],
       },
       {
-        // Serve the standalone WASM binary (if present) with the correct MIME type
+        source: '/opencv/:path*.js',
+        headers: [
+          { key: 'Content-Type',  value: 'application/javascript' },
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+        ],
+      },
+      {
         source: '/opencv/:path*.wasm',
         headers: [
-          { key: 'Content-Type', value: 'application/wasm' },
+          { key: 'Content-Type',  value: 'application/wasm' },
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
         ],
       },
     ]

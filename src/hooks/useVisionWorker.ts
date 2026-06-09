@@ -40,7 +40,8 @@ export function useVisionWorker() {
     }
 
     workerRef.current = worker
-    worker.postMessage({ type: 'INIT' })
+    const opencvUrl = process.env.NEXT_PUBLIC_OPENCV_URL ?? '/opencv/opencv.js'
+    worker.postMessage({ type: 'INIT', opencvUrl })
 
     return () => {
       console.log('[useVisionWorker] cleanup -> worker.terminate()')

@@ -3,7 +3,7 @@ import { detectYellowMarkers, type RawMarker } from '../lib/opencv/detector'
 import type { OpenCV } from '../lib/opencv/types'
 
 type InMsg =
-  | { type: 'INIT' }
+  | { type: 'INIT'; opencvUrl?: string }
   | { type: 'PROCESS_FRAME'; frameId: number; buffer: ArrayBuffer; width: number; height: number }
 
 type OutMsg =
@@ -19,7 +19,7 @@ self.onmessage = async ({ data }: MessageEvent<InMsg>) => {
   if (data.type === 'INIT') {
     console.log(`[Worker ${TAG}] INIT received, loading OpenCV...`)
     try {
-      cv = await loadOpenCVInWorker()
+      cv = await loadOpenCVInWorker(data.opencvUrl)
       console.log(`[Worker ${TAG}] OpenCV resolved, posting READY`)
       self.postMessage({ type: 'READY' } satisfies OutMsg)
     } catch (e) {

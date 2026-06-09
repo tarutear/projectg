@@ -135,6 +135,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
       const badgeColor = isConfirmed ? '#86efac' : '#fde68a'
       drawBadge(ctx, label, mx(m.x), m.y - r - 4, badgeColor)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tracked, confirmedIds, names, groups, mmPerPx, coordEnabled])
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
