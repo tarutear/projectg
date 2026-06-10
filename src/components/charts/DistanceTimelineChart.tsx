@@ -15,6 +15,8 @@ export function DistanceTimelineChart() {
   const mmPerPx  = useAngleStore((s) => s.mmPerPx)
   const groups   = useAngleStore((s) => s.groups.filter((g) => g.type === 'distance'))
 
+  const coordMode = current?.coordMode ?? false
+
   const data = useMemo(() => {
     if (!current || current.frames.length === 0) return []
     return current.frames.map((f) => ({
@@ -22,14 +24,18 @@ export function DistanceTimelineChart() {
       ...Object.fromEntries(
         groups.map((g) => {
           const v = f.angles[g.id]
-          return [g.name, v != null ? +((mmPerPx ? v * mmPerPx : v)).toFixed(1) : null]
+          if (v == null) return [g.name, null]
+          // coordMode: values already in cm from useMarkerTracking
+          // legacy mmPerPx path: values in px, convert to mm
+          const display = coordMode ? v : (mmPerPx ? v * mmPerPx : v)
+          return [g.name, +display.toFixed(2)]
         })
       ),
     }))
-  }, [current, groups, mmPerPx])
+  }, [current, groups, mmPerPx, coordMode])
 
   if (!data.length || !groups.length) return null
-  const unit = mmPerPx ? 'mm' : 'px'
+  const unit = coordMode ? 'cm' : (mmPerPx ? 'mm' : 'px')
 
   return (
     <div className="bg-gray-900 rounded-lg p-3 mt-2">

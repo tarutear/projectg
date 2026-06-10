@@ -2,19 +2,20 @@
 
 import { useAngleStore } from '@/store/angleStore'
 import { useMarkerStore } from '@/store/markerStore'
-import { useCoordinateStore, estimatePxPerCm } from '@/store/coordinateStore'
+import { useCoordinateStore, estimatePxPerCm, pairScale } from '@/store/coordinateStore'
 import { angleDeg, distancePx } from '@/lib/motion/geometry'
 
 export function AngleGroupList() {
   const { groups, removeGroup, mmPerPx } = useAngleStore()
   const { tracked, confirmedIds } = useMarkerStore()
-  const { enabled: coordEnabled } = useCoordinateStore()
+  const { enabled: coordEnabled, calibratedPxPerCm } = useCoordinateStore()
 
   const posMap = new Map<number, { x: number; y: number }>(
     tracked.map((m) => [m.id, { x: m.x, y: m.y }])
   )
+  const markerMap = new Map(tracked.map((m) => [m.id, m]))
 
-  // Estimate live pxPerCm from confirmed markers' radii
+  // Estimate live pxPerCm from confirmed markers' radii (fallback when not calibrated)
   const confirmedSet = new Set(confirmedIds)
   const confirmedRadii = tracked.filter((m) => confirmedSet.has(m.id)).map((m) => m.radius)
   const livePxPerCm = estimatePxPerCm(confirmedRadii)
@@ -32,8 +33,14 @@ export function AngleGroupList() {
             val = `${angleDeg(pts[0]!, pts[1]!, pts[2]!).toFixed(1)}°`
           } else if (g.type === 'distance' && pts.length === 2) {
             const px = distancePx(pts[0]!, pts[1]!)
-            if (coordEnabled && livePxPerCm) {
-              val = `${(px / livePxPerCm).toFixed(2)} cm`
+            const mA = markerMap.get(g.markerIds[0])
+            const mB = markerMap.get(g.markerIds[1])
+            // Use per-pair scale when both markers visible; respect calibration first.
+            const scale = mA && mB
+              ? pairScale(mA.radius, mB.radius, calibratedPxPerCm)
+              : (calibratedPxPerCm ?? livePxPerCm)
+            if (scale && (calibratedPxPerCm || coordEnabled)) {
+              val = `${(px / scale).toFixed(2)} cm`
             } else if (mmPerPx) {
               val = `${(px * mmPerPx).toFixed(1)} mm`
             } else {
