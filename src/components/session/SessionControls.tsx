@@ -4,6 +4,7 @@ import { useSessionStore } from '@/store/sessionStore'
 import { useMarkerStore } from '@/store/markerStore'
 import { useCoordinateStore, estimatePxPerCm } from '@/store/coordinateStore'
 import { sessionToCsv, downloadCsv } from '@/lib/export/csvExporter'
+import type { DetectorMode } from '@/store/markerStore'
 
 interface SessionControlsProps {
   onOpenReplay?: () => void
@@ -13,8 +14,11 @@ interface SessionControlsProps {
 export function SessionControls({ onOpenReplay, onReset }: SessionControlsProps) {
   const { current, isRecording, startSession, stopSession } = useSessionStore()
   const names = useMarkerStore((s) => s.names)
-  const { tracked, confirmedIds } = useMarkerStore()
+  const { tracked, confirmedIds, detectorMode, setDetectorMode } = useMarkerStore()
   const { enabled: coordEnabled, toggle: toggleCoord } = useCoordinateStore()
+
+  const toggleDetector = () =>
+    setDetectorMode(detectorMode === 'yellow' ? 'sticker' : 'yellow')
 
   const confirmedSet = new Set(confirmedIds)
   const confirmedRadii = tracked.filter((m) => confirmedSet.has(m.id)).map((m) => m.radius)
@@ -70,6 +74,21 @@ export function SessionControls({ onOpenReplay, onReset }: SessionControlsProps)
         {coordEnabled
           ? `📐 기준점 좌표 ON${livePxPerCm ? ` · ${livePxPerCm.toFixed(1)} px/cm` : ''}`
           : '📐 기준점 좌표 적용'}
+      </button>
+
+      {/* Detector mode toggle */}
+      <button
+        onClick={toggleDetector}
+        title="검출 마커 종류를 전환합니다"
+        className={`text-xs rounded py-1.5 font-medium w-full transition-colors ${
+          detectorMode === 'sticker'
+            ? 'bg-purple-700 hover:bg-purple-600 text-white'
+            : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+        }`}
+      >
+        {detectorMode === 'sticker'
+          ? '⬤ 스티커 인식 ON (회색·검정 동심원)'
+          : '● 노랑 마커 인식'}
       </button>
 
       <div className="flex gap-2">

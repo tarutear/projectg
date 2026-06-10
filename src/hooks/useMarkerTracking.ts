@@ -20,6 +20,7 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
   const setWorkerState  = useMarkerStore((s) => s.setWorkerState)
   const setLatency      = useMarkerStore((s) => s.setLatency)
   const confirmedIds    = useMarkerStore((s) => s.confirmedIds)
+  const detectorMode    = useMarkerStore((s) => s.detectorMode)
   const resetMarkers    = useMarkerStore((s) => s.resetTracking)
 
   const isRecording = useSessionStore((s) => s.isRecording)
@@ -35,9 +36,13 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
 
   const trackedRef    = useRef<TrackedMarker[]>([])
   const kalmanMap     = useRef(new Map<number, KalmanFilter2D>())
+  const modeRef       = useRef(detectorMode)
   // Reference coordinate state, set on first recording frame
   const coordRef      = useRef<{ origin: { x: number; y: number }; pxPerCm: number } | null>(null)
   const isFirstFrame  = useRef(true)
+
+  // Keep modeRef in sync so the processFrame wrapper always uses the latest mode
+  useEffect(() => { modeRef.current = detectorMode }, [detectorMode])
 
   // Reset reference state whenever a new recording session begins
   useEffect(() => {
@@ -150,7 +155,13 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
     clearReference()
   }, [resetMarkers, clearReference])
 
-  useFrameCapture({ videoRef, onFrame: processFrame, enabled: state === 'ready' })
+  const processFrameWithMode = useCallback(
+    (buffer: ArrayBuffer, width: number, height: number, frameId: number) =>
+      processFrame(buffer, width, height, frameId, modeRef.current),
+    [processFrame]
+  )
+
+  useFrameCapture({ videoRef, onFrame: processFrameWithMode, enabled: state === 'ready' })
 
   return { workerState: state, resetTracking }
 }

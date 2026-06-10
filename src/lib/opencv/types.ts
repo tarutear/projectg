@@ -4,6 +4,7 @@ export interface CvMat {
   data: Uint8Array
   data32F: Float32Array
   type(): number
+  ucharAt(row: number, col: number): number
   delete(): void
 }
 
@@ -50,11 +51,13 @@ export interface OpenCV {
 
   COLOR_RGBA2BGR: number
   COLOR_BGR2HSV: number
+  COLOR_BGR2GRAY: number
   RETR_EXTERNAL: number
   CHAIN_APPROX_SIMPLE: number
   MORPH_OPEN: number
   MORPH_CLOSE: number
   MORPH_ELLIPSE: number
+  THRESH_BINARY_INV: number
 
   matFromArray(rows: number, cols: number, type: number, array: number[]): CvMat
   countNonZero(src: CvMat): number
@@ -68,8 +71,11 @@ export interface OpenCV {
     method: number
   ): void
   contourArea(contour: CvMat): number
+  arcLength(curve: CvMat, closed: boolean): number
   moments(array: CvMat, binaryImage?: boolean): CvMoments
   morphologyEx(src: CvMat, dst: CvMat, op: number, kernel: CvMat): void
+  GaussianBlur(src: CvMat, dst: CvMat, ksize: CvSize, sigmaX: number): void
+  threshold(src: CvMat, dst: CvMat, thresh: number, maxval: number, type: number): number
   getStructuringElement(shape: number, ksize: CvSize): CvMat
   matFromImageData(imageData: ImageData): CvMat
 

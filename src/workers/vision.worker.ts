@@ -1,10 +1,11 @@
 import { loadOpenCVInWorker } from '../lib/opencv/loader'
-import { detectYellowMarkers, type RawMarker } from '../lib/opencv/detector'
+import { detectYellowMarkers, detectStickerMarkers, type RawMarker } from '../lib/opencv/detector'
 import type { OpenCV } from '../lib/opencv/types'
+import type { DetectorMode } from '../store/markerStore'
 
 type InMsg =
   | { type: 'INIT'; opencvUrl?: string }
-  | { type: 'PROCESS_FRAME'; frameId: number; buffer: ArrayBuffer; width: number; height: number }
+  | { type: 'PROCESS_FRAME'; frameId: number; buffer: ArrayBuffer; width: number; height: number; mode: DetectorMode }
 
 type OutMsg =
   | { type: 'READY' }
@@ -41,7 +42,9 @@ self.onmessage = async ({ data }: MessageEvent<InMsg>) => {
         data.width,
         data.height
       )
-      const markers = detectYellowMarkers(cv, imageData)
+      const markers = data.mode === 'sticker'
+        ? detectStickerMarkers(cv, imageData)
+        : detectYellowMarkers(cv, imageData)
       self.postMessage({
         type: 'DETECTION_RESULT',
         frameId: data.frameId,

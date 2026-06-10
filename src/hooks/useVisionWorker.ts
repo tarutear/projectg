@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { RawMarker } from '@/lib/opencv/detector'
+import type { DetectorMode } from '@/store/markerStore'
 
 export type WorkerState = 'idle' | 'initializing' | 'ready' | 'error'
 
@@ -55,9 +56,9 @@ export function useVisionWorker() {
   }, [])
 
   const processFrame = useCallback(
-    (buffer: ArrayBuffer, width: number, height: number, frameId: number) => {
+    (buffer: ArrayBuffer, width: number, height: number, frameId: number, mode: DetectorMode = 'yellow') => {
       workerRef.current?.postMessage(
-        { type: 'PROCESS_FRAME', frameId, buffer, width, height },
+        { type: 'PROCESS_FRAME', frameId, buffer, width, height, mode },
         [buffer]
       )
     },
