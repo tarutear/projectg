@@ -15,6 +15,7 @@ import { SessionControls } from '@/components/session/SessionControls'
 import { ReplayModal } from '@/components/session/ReplayModal'
 import { AngleTimelineChart } from '@/components/charts/AngleTimelineChart'
 import { DistanceTimelineChart } from '@/components/charts/DistanceTimelineChart'
+import { CalibrationPanel } from '@/components/calibration/CalibrationPanel'
 
 export default function Home() {
   const { videoRef } = useCamera()
@@ -102,6 +103,13 @@ export default function Home() {
               </h2>
               <AngleGroupBuilder />
               <AngleGroupList />
+            </section>
+
+            <section className="bg-gray-900 rounded-lg p-3">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                거리 보정 (Calibration)
+              </h2>
+              <CalibrationPanel />
             </section>
           </aside>
         </div>
