@@ -1,13 +1,17 @@
 import { create } from 'zustand'
 
 export type GroupType = 'angle' | 'distance'
+export type AngleVariant = 'interior' | 'supplement'
 
 export interface AngleGroup {
   id: string
   name: string
   type: GroupType
-  // 3 marker IDs for angle (proximal, vertex, distal); 2 for distance
   markerIds: number[]
+  /** Index into markerIds that is the vertex (default 1 = middle) */
+  vertexIndex?: 0 | 1 | 2
+  /** interior: 0-180°  supplement: 180° - interior (default interior) */
+  angleVariant?: AngleVariant
 }
 
 interface AngleStore {

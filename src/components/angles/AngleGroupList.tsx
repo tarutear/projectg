@@ -3,7 +3,7 @@
 import { useAngleStore } from '@/store/angleStore'
 import { useMarkerStore } from '@/store/markerStore'
 import { useCoordinateStore, estimatePxPerCm, pairScale } from '@/store/coordinateStore'
-import { angleDeg, distancePx } from '@/lib/motion/geometry'
+import { computeAngle, distancePx } from '@/lib/motion/geometry'
 
 export function AngleGroupList() {
   const { groups, removeGroup, mmPerPx } = useAngleStore()
@@ -30,7 +30,12 @@ export function AngleGroupList() {
         let val   = '—'
         if (ok) {
           if (g.type === 'angle' && pts.length === 3) {
-            val = `${angleDeg(pts[0]!, pts[1]!, pts[2]!).toFixed(1)}°`
+            const deg = computeAngle(
+              [pts[0]!, pts[1]!, pts[2]!],
+              g.vertexIndex ?? 1,
+              g.angleVariant ?? 'interior',
+            )
+            val = `${deg.toFixed(1)}°`
           } else if (g.type === 'distance' && pts.length === 2) {
             const px = distancePx(pts[0]!, pts[1]!)
             const mA = markerMap.get(g.markerIds[0])

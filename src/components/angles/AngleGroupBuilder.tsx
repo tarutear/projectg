@@ -2,31 +2,48 @@
 
 import { useState } from 'react'
 import { nanoid } from 'nanoid'
-import { useAngleStore, type GroupType } from '@/store/angleStore'
+import { useAngleStore, type GroupType, type AngleVariant } from '@/store/angleStore'
 import { useMarkerStore } from '@/store/markerStore'
 
 export function AngleGroupBuilder() {
-  const [name, setName]     = useState('')
-  const [type, setType]     = useState<GroupType>('angle')
+  const [name, setName]         = useState('')
+  const [type, setType]         = useState<GroupType>('angle')
   const [selected, setSelected] = useState<number[]>([])
+  const [vertexIndex, setVertexIndex] = useState<0 | 1 | 2>(1)
+  const [angleVariant, setAngleVariant] = useState<AngleVariant>('interior')
 
   const { addGroup } = useAngleStore()
   const { tracked, confirmedIds, names } = useMarkerStore()
   const nameMap = new Map(names.map((n) => [n.markerId, n.name]))
 
-  // Show confirmed markers in group builder; fall back to all tracked if none confirmed yet
-  const ids = confirmedIds.length > 0 ? confirmedIds : tracked.map((m) => m.id)
-  const all = ids
+  const ids      = confirmedIds.length > 0 ? confirmedIds : tracked.map((m) => m.id)
   const required = type === 'angle' ? 3 : 2
 
   const toggle = (id: number) =>
-    setSelected((prev) =>
-      prev.includes(id)
-        ? prev.filter((x) => x !== id)
-        : prev.length < required ? [...prev, id] : prev
-    )
+    setSelected((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id)
+      if (prev.length < required) return [...prev, id]
+      return prev
+    })
+
+  const markerLabel = (id: number) => nameMap.get(id) ?? `#${id}`
 
   const canAdd = name.trim().length > 0 && selected.length === required
+
+  const handleAdd = () => {
+    if (!canAdd) return
+    addGroup({
+      id: nanoid(),
+      name: name.trim(),
+      type,
+      markerIds: selected,
+      ...(type === 'angle' && { vertexIndex, angleVariant }),
+    })
+    setName('')
+    setSelected([])
+    setVertexIndex(1)
+    setAngleVariant('interior')
+  }
 
   return (
     <div className="space-y-2">
@@ -49,9 +66,11 @@ export function AngleGroupBuilder() {
           </button>
         ))}
       </div>
-      {all.length > 0 ? (
+
+      {/* Marker selection */}
+      {ids.length > 0 ? (
         <div className="flex flex-wrap gap-1">
-          {all.map((id) => (
+          {ids.map((id) => (
             <button
               key={id}
               onClick={() => toggle(id)}
@@ -61,19 +80,64 @@ export function AngleGroupBuilder() {
                   : 'bg-gray-700 text-gray-300'
               }`}
             >
-              {nameMap.get(id) ?? `#${id}`}
+              {markerLabel(id)}
             </button>
           ))}
         </div>
       ) : (
         <p className="text-xs text-gray-500">Add markers first</p>
       )}
+
+      {/* Angle options — shown only after 3 markers are selected */}
+      {type === 'angle' && selected.length === 3 && (
+        <div className="space-y-1.5 border border-gray-700 rounded p-2">
+          {/* Vertex selector */}
+          <div>
+            <p className="text-xs text-gray-500 mb-1">꼭짓점 (vertex)</p>
+            <div className="flex gap-1">
+              {([0, 1, 2] as const).map((i) => (
+                <button
+                  key={i}
+                  onClick={() => setVertexIndex(i)}
+                  className={`flex-1 text-xs rounded py-1 transition-colors ${
+                    vertexIndex === i
+                      ? 'bg-orange-500 text-white font-semibold'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  {vertexIndex === i ? '★ ' : ''}{markerLabel(selected[i])}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Interior / Supplement */}
+          <div>
+            <p className="text-xs text-gray-500 mb-1">각도 종류</p>
+            <div className="flex gap-1">
+              {([
+                ['interior',   '내각 (0–180°)'],
+                ['supplement', '보각 (180°–)'],
+              ] as [AngleVariant, string][]).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setAngleVariant(v)}
+                  className={`flex-1 text-xs rounded py-1 transition-colors ${
+                    angleVariant === v
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <button
-        onClick={() => {
-          if (!canAdd) return
-          addGroup({ id: nanoid(), name: name.trim(), type, markerIds: selected })
-          setName(''); setSelected([])
-        }}
+        onClick={handleAdd}
         disabled={!canAdd}
         className="w-full text-xs rounded py-1 bg-blue-600 text-white disabled:opacity-40 hover:enabled:bg-blue-500"
       >

@@ -10,7 +10,7 @@ import { useMarkerStore } from '@/store/markerStore'
 import { useSessionStore } from '@/store/sessionStore'
 import { useAngleStore } from '@/store/angleStore'
 import { useCoordinateStore, estimatePxPerCm, pairScale } from '@/store/coordinateStore'
-import { angleDeg, distancePx } from '@/lib/motion/geometry'
+import { computeAngle, distancePx } from '@/lib/motion/geometry'
 import type { RawMarker } from '@/lib/opencv/detector'
 
 export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
@@ -118,7 +118,11 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
         if (g.type === 'angle' && g.markerIds.length === 3) {
           const pts = g.markerIds.map((id) => pos.get(id))
           if (!pts.every(Boolean)) continue
-          angles[g.id] = angleDeg(pts[0]!, pts[1]!, pts[2]!)
+          angles[g.id] = computeAngle(
+            [pts[0]!, pts[1]!, pts[2]!],
+            g.vertexIndex ?? 1,
+            g.angleVariant ?? 'interior',
+          )
         } else if (g.type === 'distance' && g.markerIds.length === 2) {
           const mA = markerMap.get(g.markerIds[0])
           const mB = markerMap.get(g.markerIds[1])

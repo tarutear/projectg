@@ -9,6 +9,21 @@ export function angleDeg(a: Point2D, b: Point2D, c: Point2D): number {
   return Math.atan2(cross, dot) * (180 / Math.PI)
 }
 
+/**
+ * Compute angle for 3 points with configurable vertex and variant.
+ * vertexIndex: which of the 3 points is the pivot (0, 1, or 2).
+ * variant: 'interior' returns 0-180°; 'supplement' returns 180° - interior.
+ */
+export function computeAngle(
+  pts: [Point2D, Point2D, Point2D],
+  vertexIndex: 0 | 1 | 2 = 1,
+  variant: 'interior' | 'supplement' = 'interior',
+): number {
+  const others = ([0, 1, 2] as const).filter((i) => i !== vertexIndex) as [number, number]
+  const interior = angleDeg(pts[others[0]], pts[vertexIndex], pts[others[1]])
+  return variant === 'supplement' ? 180 - interior : interior
+}
+
 /** Euclidean distance in pixels. */
 export function distancePx(a: Point2D, b: Point2D): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
