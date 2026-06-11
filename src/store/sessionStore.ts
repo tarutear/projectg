@@ -18,6 +18,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   isRecording: false,
 
   startSession: (name = 'Session', coordMode = false) => {
+    if (get().isRecording) return
     set({
       current: { id: nanoid(), name, startedAt: Date.now(), frames: [], coordMode },
       isRecording: true,

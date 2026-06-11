@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export const MARKER_RADIUS_CM = 0.75  // half of 1.5cm diameter
+export const MARKER_RADIUS_CM = 1.0  // half of 2cm diameter
 
 interface CoordinateStore {
   enabled: boolean

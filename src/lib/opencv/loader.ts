@@ -71,6 +71,7 @@ export function loadOpenCVInWorker(src = '/opencv/opencv.js'): Promise<OpenCV> {
     }
 
     const afterImport = () => {
+      if (settled) return  // fetch completed after timeout; avoid orphaned setInterval
       const g = self as G
       console.log(
         '[OpenCV] afterImport | cv type:', typeof g.cv,

@@ -9,20 +9,56 @@ interface MotionDB extends DBSchema {
   }
 }
 
-let _db: IDBPDatabase<MotionDB> | null = null
+// Promise singleton prevents multiple concurrent openDB calls racing each other
+let _dbPromise: Promise<IDBPDatabase<MotionDB>> | null = null
 
-async function getDb(): Promise<IDBPDatabase<MotionDB>> {
-  if (_db) return _db
-  _db = await openDB<MotionDB>('motion-analysis-v1', 1, {
-    upgrade(d) {
-      const store = d.createObjectStore('sessions', { keyPath: 'id' })
-      store.createIndex('by-date', 'startedAt')
-    },
-  })
-  return _db
+function getDb(): Promise<IDBPDatabase<MotionDB>> {
+  if (!_dbPromise) {
+    _dbPromise = openDB<MotionDB>('motion-analysis-v1', 1, {
+      upgrade(d) {
+        const store = d.createObjectStore('sessions', { keyPath: 'id' })
+        store.createIndex('by-date', 'startedAt')
+      },
+    }).catch((err) => {
+      _dbPromise = null // allow retry after transient failures
+      throw err
+    })
+  }
+  return _dbPromise
 }
 
-export const saveSession     = async (s: Session)  => (await getDb()).put('sessions', s)
-export const loadSession     = async (id: string)  => (await getDb()).get('sessions', id)
-export const loadAllSessions = async ()            => (await getDb()).getAllFromIndex('sessions', 'by-date')
-export const deleteSession   = async (id: string)  => (await getDb()).delete('sessions', id)
+export async function saveSession(s: Session): Promise<void> {
+  try {
+    await (await getDb()).put('sessions', s)
+  } catch (err) {
+    console.error('[IDB] saveSession failed:', err)
+    throw err
+  }
+}
+
+export async function loadSession(id: string): Promise<Session | undefined> {
+  try {
+    return await (await getDb()).get('sessions', id)
+  } catch (err) {
+    console.error('[IDB] loadSession failed:', err)
+    return undefined
+  }
+}
+
+export async function loadAllSessions(): Promise<Session[]> {
+  try {
+    return await (await getDb()).getAllFromIndex('sessions', 'by-date')
+  } catch (err) {
+    console.error('[IDB] loadAllSessions failed:', err)
+    return []
+  }
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  try {
+    await (await getDb()).delete('sessions', id)
+  } catch (err) {
+    console.error('[IDB] deleteSession failed:', err)
+    throw err
+  }
+}

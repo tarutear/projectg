@@ -31,7 +31,7 @@ export function useVisionWorker() {
         handlerRef.current?.(data.markers, data.frameId, data.latencyMs)
       } else if (data.type === 'ERROR') {
         console.error('[VisionWorker]', data.message)
-        if (!data.message.includes('not ready')) setState('error')
+        if (data.code !== 'not_ready') setState('error')
       }
     }
 

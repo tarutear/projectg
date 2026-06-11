@@ -66,9 +66,10 @@ function drawFrame(
   session: Session,
   frameIndex: number,
   markerNames: Record<number, string>,
+  precomputedScale?: ReturnType<typeof computeScale>,
 ) {
   const { width, height } = ctx.canvas
-  const { scale, offsetX, offsetY } = computeScale(session, width, height)
+  const { scale, offsetX, offsetY } = precomputedScale ?? computeScale(session, width, height)
   const frames = session.frames
   const startIdx = Math.max(0, frameIndex - TRAIL_FRAMES)
   const coordMode = session.coordMode ?? false
@@ -211,6 +212,12 @@ export function ReplayModal({
 }: ReplayModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
+  // Memoize scale so it's not recomputed on every frame during playback
+  const cachedScale = useMemo(() => {
+    if (!session || session.frames.length === 0) return undefined
+    return computeScale(session, 640, 420)
+  }, [session])
+
   const totalDuration = useMemo(() => {
     if (!session || session.frames.length < 2) return '-'
     return formatTimestamp(session.frames, session.frames.length - 1)
@@ -225,8 +232,8 @@ export function ReplayModal({
     if (!canvas || !session || session.frames.length === 0) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    drawFrame(ctx, session, frameIndex, markerNames)
-  }, [session, frameIndex, markerNames])
+    drawFrame(ctx, session, frameIndex, markerNames, cachedScale)
+  }, [session, frameIndex, markerNames, cachedScale])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">

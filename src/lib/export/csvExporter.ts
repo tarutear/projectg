@@ -1,5 +1,14 @@
 import type { Session } from '@/types/session'
 
+// Prevent CSV formula injection (Excel/Sheets treat cells starting with =,+,-,@ as formulas)
+function escapeCsv(value: string | number | undefined): string {
+  const str = value == null ? '' : String(value)
+  if (/^[=+\-@\t\r]/.test(str) || str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`
+  }
+  return str
+}
+
 export function sessionToCsv(
   session: Session,
   markerNames?: Record<number, string>
@@ -17,10 +26,10 @@ export function sessionToCsv(
 
   const markerCols = markerIds.flatMap((id) => {
     const name = markerNames?.[id] ?? `M${id}`
-    return [`${name}_x`, `${name}_y`]
+    return [`${escapeCsv(name)}_x`, `${escapeCsv(name)}_y`]
   })
 
-  const header = ['frameId', 'timestamp_ms', ...markerCols, ...groupIds].join(',')
+  const header = ['frameId', 'timestamp_ms', ...markerCols, ...groupIds.map(escapeCsv)].join(',')
 
   const rows = session.frames.map((f) => [
     f.frameId,
@@ -29,7 +38,7 @@ export function sessionToCsv(
       const pos = f.markerPositions[id]
       return pos ? [pos.x.toFixed(1), pos.y.toFixed(1)] : ['', '']
     }),
-    ...groupIds.map((id) => f.angles[id] ?? ''),
+    ...groupIds.map((id) => escapeCsv(f.angles[id])),
   ].join(','))
 
   return [header, ...rows].join('\n')

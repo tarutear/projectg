@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useMemo } from 'react'
 import type { RefObject } from 'react'
 import { useCameraStore } from '@/store/cameraStore'
 import { useMarkerStore } from '@/store/markerStore'
@@ -22,7 +22,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
   const { groups, mmPerPx } = useAngleStore()
   const { enabled: coordEnabled, calibratedPxPerCm } = useCoordinateStore()
 
-  const confirmedSet = new Set(confirmedIds)
+  const confirmedSet = useMemo(() => new Set(confirmedIds), [confirmedIds])
 
   // Keep canvas pixel dimensions in sync with the video native resolution
   useEffect(() => {
@@ -55,8 +55,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
     const mx = (x: number) => W - x
 
     // Estimate live pxPerCm from confirmed markers' radii
-    const confirmedSet2 = new Set(confirmedIds)
-    const confirmedRadii = tracked.filter((m) => confirmedSet2.has(m.id)).map((m) => m.radius)
+    const confirmedRadii = tracked.filter((m) => confirmedSet.has(m.id)).map((m) => m.radius)
     const livePxPerCm = estimatePxPerCm(confirmedRadii)
 
     const nameMap = new Map(names.map((n) => [n.markerId, n.name]))

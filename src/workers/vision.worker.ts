@@ -9,7 +9,7 @@ type InMsg =
 
 type OutMsg =
   | { type: 'READY' }
-  | { type: 'ERROR'; message: string }
+  | { type: 'ERROR'; message: string; code?: string }
   | { type: 'DETECTION_RESULT'; frameId: number; markers: RawMarker[]; latencyMs: number }
 
 let cv: OpenCV | null = null
@@ -32,7 +32,7 @@ self.onmessage = async ({ data }: MessageEvent<InMsg>) => {
 
   if (data.type === 'PROCESS_FRAME') {
     if (!cv) {
-      self.postMessage({ type: 'ERROR', message: 'OpenCV not ready' } satisfies OutMsg)
+      self.postMessage({ type: 'ERROR', message: 'OpenCV not ready', code: 'not_ready' } satisfies OutMsg)
       return
     }
     const t0 = performance.now()
