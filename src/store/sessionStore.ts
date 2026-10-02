@@ -3,11 +3,14 @@ import { nanoid } from 'nanoid'
 import type { Session, FrameData } from '@/types/session'
 import { saveSession } from '@/lib/storage/indexeddb'
 
+/** Recording settings frozen into the session at start */
+export type SessionSettings = Pick<Session, 'coordMode' | 'markerRadiusCm' | 'calibrated' | 'detectorMode'>
+
 interface SessionStore {
   current: Session | null
   isRecording: boolean
 
-  startSession: (name?: string, coordMode?: boolean) => void
+  startSession: (name: string, settings: SessionSettings) => void
   stopSession: () => Promise<void>
   addFrame: (f: FrameData) => void
   reset: () => void
@@ -17,10 +20,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   current: null,
   isRecording: false,
 
-  startSession: (name = 'Session', coordMode = false) => {
+  startSession: (name, settings) => {
     if (get().isRecording) return
     set({
-      current: { id: nanoid(), name, startedAt: Date.now(), frames: [], coordMode },
+      current: { id: nanoid(), name, startedAt: Date.now(), frames: [], distanceUnit: 'cm', ...settings },
       isRecording: true,
     })
   },

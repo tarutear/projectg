@@ -177,14 +177,21 @@ function computeDisplacements(
   markerNames: Record<number, string>,
 ): Displacement[] {
   if (session.frames.length === 0) return []
-  const frame0 = session.frames[0]
   const frameN = session.frames[frameIndex]
   const coordMode = session.coordMode ?? false
   const unit = coordMode ? 'cm' : 'px'
 
+  // Each marker's first recorded position (frame 0 may lack some markers, e.g. before the origin is set)
+  const firstPos = new Map<number, { x: number; y: number }>()
+  for (let i = 0; i <= frameIndex; i++) {
+    for (const [k, p] of Object.entries(session.frames[i].markerPositions)) {
+      if (!firstPos.has(Number(k))) firstPos.set(Number(k), p)
+    }
+  }
+
   return Object.entries(frameN.markerPositions).flatMap(([idStr, pos]) => {
     const id = Number(idStr)
-    const origin = frame0.markerPositions[id]
+    const origin = firstPos.get(id)
     if (!origin) return []
     const rawDx = pos.x - origin.x
     const rawDy = pos.y - origin.y

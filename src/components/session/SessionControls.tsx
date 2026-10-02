@@ -2,9 +2,9 @@
 
 import { useSessionStore } from '@/store/sessionStore'
 import { useMarkerStore } from '@/store/markerStore'
-import { useCoordinateStore, estimatePxPerCm } from '@/store/coordinateStore'
+import { useAngleStore } from '@/store/angleStore'
+import { useCoordinateStore, useMarkerRadiusCm } from '@/store/coordinateStore'
 import { sessionToCsv, downloadCsv } from '@/lib/export/csvExporter'
-import type { DetectorMode } from '@/store/markerStore'
 
 interface SessionControlsProps {
   onOpenReplay?: () => void
@@ -14,22 +14,28 @@ interface SessionControlsProps {
 export function SessionControls({ onOpenReplay, onReset }: SessionControlsProps) {
   const { current, isRecording, startSession, stopSession } = useSessionStore()
   const names = useMarkerStore((s) => s.names)
-  const { tracked, confirmedIds, detectorMode, setDetectorMode } = useMarkerStore()
-  const { enabled: coordEnabled, toggle: toggleCoord } = useCoordinateStore()
+  const { detectorMode, setDetectorMode } = useMarkerStore()
+  const groups = useAngleStore((s) => s.groups)
+  const { enabled: coordEnabled, toggle: toggleCoord, calibration } = useCoordinateStore()
+  const markerRadiusCm = useMarkerRadiusCm()
 
   const toggleDetector = () =>
     setDetectorMode(detectorMode === 'yellow' ? 'sticker' : 'yellow')
 
-  const confirmedSet = new Set(confirmedIds)
-  const confirmedRadii = tracked.filter((m) => confirmedSet.has(m.id)).map((m) => m.radius)
-  const livePxPerCm = estimatePxPerCm(confirmedRadii)
+  // Settings that change units/scale are frozen into the session and locked while recording
+  const start = () => startSession('Session', {
+    coordMode: coordEnabled,
+    markerRadiusCm,
+    calibrated: calibration?.detectorMode === detectorMode,
+    detectorMode,
+  })
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         {!isRecording ? (
           <button
-            onClick={() => startSession('Session', coordEnabled)}
+            onClick={start}
             className="flex-1 text-xs bg-green-700 hover:bg-green-600 rounded py-1.5 font-medium"
           >
             ● Record
@@ -48,7 +54,7 @@ export function SessionControls({ onOpenReplay, onReset }: SessionControlsProps)
               const ts = new Date(current.startedAt)
                 .toISOString().slice(0, 16).replace('T', '_').replace(':', '-')
               const nameMap = Object.fromEntries(names.map((n) => [n.markerId, n.name]))
-              downloadCsv(sessionToCsv(current, nameMap), `motion-${ts}.csv`)
+              downloadCsv(sessionToCsv(current, nameMap, groups), `motion-${ts}.csv`)
             }}
             className="text-xs bg-gray-600 hover:bg-gray-500 rounded py-1.5 px-3"
           >
@@ -64,23 +70,23 @@ export function SessionControls({ onOpenReplay, onReset }: SessionControlsProps)
       {/* Reference coordinate toggle */}
       <button
         onClick={toggleCoord}
-        title="기준점 좌표 적용: 녹화 시작 위치를 (0,0)으로, 단위를 cm으로 변환합니다"
-        className={`text-xs rounded py-1.5 font-medium w-full transition-colors ${
+        disabled={isRecording}
+        title="기준점 좌표 적용: 녹화 시작 위치를 (0,0)으로 하는 cm 좌표로 마커 위치를 기록합니다 (거리는 항상 cm)"
+        className={`text-xs rounded py-1.5 font-medium w-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
           coordEnabled
             ? 'bg-blue-700 hover:bg-blue-600 text-white'
             : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
         }`}
       >
-        {coordEnabled
-          ? `📐 기준점 좌표 ON${livePxPerCm ? ` · ${livePxPerCm.toFixed(1)} px/cm` : ''}`
-          : '📐 기준점 좌표 적용'}
+        {coordEnabled ? '📐 기준점 좌표 ON' : '📐 기준점 좌표 적용'}
       </button>
 
       {/* Detector mode toggle */}
       <button
         onClick={toggleDetector}
+        disabled={isRecording}
         title="검출 마커 종류를 전환합니다"
-        className={`text-xs rounded py-1.5 font-medium w-full transition-colors ${
+        className={`text-xs rounded py-1.5 font-medium w-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
           detectorMode === 'sticker'
             ? 'bg-purple-700 hover:bg-purple-600 text-white'
             : 'bg-gray-700 hover:bg-gray-600 text-gray-300'

@@ -100,6 +100,10 @@ const STICKER_DARK_THR = 80   // pixels below this are "black"
 const STICKER_GRAY_LO  = 55   // center must be brighter than this
 const STICKER_GRAY_HI  = 210  // center must be darker than this
 const STICKER_MIN_CIRC = 0.50 // relaxed for tiny markers
+// findContours traces boundary-pixel centres (~0.5 px inside the true edge) and the dark threshold
+// sits below the ring/background midpoint, so sqrt(area/π) reads small. At a 3–9 px radius that bias
+// alone makes cm distances drift with camera distance; this restores the geometric part of it.
+const STICKER_RADIUS_CORRECTION_PX = 0.5
 
 export function detectStickerMarkers(cv: OpenCV, imageData: ImageData): RawMarker[] {
   const src      = cv.matFromImageData(imageData)
@@ -160,7 +164,7 @@ export function detectStickerMarkers(cv: OpenCV, imageData: ImageData): RawMarke
       }
       if (darkCount < 2) continue
 
-      results.push({ x: cx, y: cy, radius })
+      results.push({ x: cx, y: cy, radius: radius + STICKER_RADIUS_CORRECTION_PX })
     }
   } finally {
     src.delete(); bgr.delete(); gray.delete(); blur.delete()

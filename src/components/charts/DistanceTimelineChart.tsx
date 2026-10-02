@@ -7,15 +7,13 @@ import {
 } from 'recharts'
 import { useSessionStore } from '@/store/sessionStore'
 import { useAngleStore } from '@/store/angleStore'
+import { sessionDistanceUnit } from '@/lib/motion/metric'
 
 const COLORS = ['#60a5fa', '#34d399', '#f87171', '#facc15']
 
 export function DistanceTimelineChart() {
   const current  = useSessionStore((s) => s.current)
-  const mmPerPx  = useAngleStore((s) => s.mmPerPx)
   const groups   = useAngleStore((s) => s.groups.filter((g) => g.type === 'distance'))
-
-  const coordMode = current?.coordMode ?? false
 
   const data = useMemo(() => {
     if (!current || current.frames.length === 0) return []
@@ -24,18 +22,14 @@ export function DistanceTimelineChart() {
       ...Object.fromEntries(
         groups.map((g) => {
           const v = f.angles[g.id]
-          if (v == null) return [g.name, null]
-          // coordMode: values already in cm from useMarkerTracking
-          // legacy mmPerPx path: values in px, convert to mm
-          const display = coordMode ? v : (mmPerPx ? v * mmPerPx : v)
-          return [g.name, +display.toFixed(2)]
+          return [g.name, v == null ? null : +v.toFixed(2)]
         })
       ),
     }))
-  }, [current, groups, mmPerPx, coordMode])
+  }, [current, groups])
 
-  if (!data.length || !groups.length) return null
-  const unit = coordMode ? 'cm' : (mmPerPx ? 'mm' : 'px')
+  if (!current || !data.length || !groups.length) return null
+  const unit = sessionDistanceUnit(current)
 
   return (
     <div className="bg-gray-900 rounded-lg p-3 mt-2">

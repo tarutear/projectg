@@ -9,8 +9,10 @@ import { KalmanFilter2D } from '@/lib/motion/kalman'
 import { useMarkerStore } from '@/store/markerStore'
 import { useSessionStore } from '@/store/sessionStore'
 import { useAngleStore } from '@/store/angleStore'
-import { useCoordinateStore, estimatePxPerCm, pairScale } from '@/store/coordinateStore'
-import { computeAngle, distancePx } from '@/lib/motion/geometry'
+import { useCameraStore } from '@/store/cameraStore'
+import { useCoordinateStore, useMarkerRadiusCm } from '@/store/coordinateStore'
+import { computeAngle, type Point2D } from '@/lib/motion/geometry'
+import { markerPlaneCm, pairDistanceCm } from '@/lib/motion/metric'
 import type { RawMarker } from '@/lib/opencv/detector'
 
 export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
@@ -29,30 +31,25 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
 
   const groups = useAngleStore((s) => s.groups)
 
-  const coordEnabled        = useCoordinateStore((s) => s.enabled)
-  const calibratedPxPerCm  = useCoordinateStore((s) => s.calibratedPxPerCm)
-  const setReference        = useCoordinateStore((s) => s.setReference)
-  const clearReference      = useCoordinateStore((s) => s.clearReference)
+  const coordEnabled   = useCoordinateStore((s) => s.enabled)
+  const markerRadiusCm = useMarkerRadiusCm()
+  const frameSize      = useCameraStore((s) => s.frameSize)
 
   const trackedRef    = useRef<TrackedMarker[]>([])
-  const kalmanMap     = useRef(new Map<number, KalmanFilter2D>())
+  // Radius gets its own filter with the same gains as position, so (u − c)/r — the per-marker
+  // cm conversion — stays exact while depth changes (a laggier radius filter would bias it).
+  const kalmanMap     = useRef(new Map<number, { pos: KalmanFilter2D; rad: KalmanFilter2D }>())
   const modeRef       = useRef(detectorMode)
-  // Reference coordinate state, set on first recording frame
-  const coordRef      = useRef<{ origin: { x: number; y: number }; pxPerCm: number } | null>(null)
-  const isFirstFrame  = useRef(true)
+  // Coordinate-mode origin (cm, marker-plane coords), set on the first recording frame with a visible marker
+  const originRef     = useRef<Point2D | null>(null)
 
   // Keep modeRef in sync so the processFrame wrapper always uses the latest mode
   useEffect(() => { modeRef.current = detectorMode }, [detectorMode])
 
-  // Reset reference state whenever a new recording session begins
+  // Reset the origin whenever a new recording session begins
   useEffect(() => {
-    if (isRecording) {
-      isFirstFrame.current = true
-      coordRef.current = null
-    } else {
-      clearReference()
-    }
-  }, [isRecording, clearReference])
+    if (isRecording) originRef.current = null
+  }, [isRecording])
 
   const handleResult = useCallback(
     (rawMarkers: RawMarker[], frameId: number, latencyMs: number) => {
@@ -62,8 +59,11 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
       const smoothed = remapped.map((m) => {
         if (m.missingFrames > 0) return m
         let kf = kalmanMap.current.get(m.id)
-        if (!kf) { kf = new KalmanFilter2D(m.x, m.y); kalmanMap.current.set(m.id, kf) }
-        return { ...m, ...kf.update(m.x, m.y) }
+        if (!kf) {
+          kf = { pos: new KalmanFilter2D(m.x, m.y), rad: new KalmanFilter2D(m.radius, 0) }
+          kalmanMap.current.set(m.id, kf)
+        }
+        return { ...m, ...kf.pos.update(m.x, m.y), radius: kf.rad.update(m.radius, 0).x }
       })
 
       // Purge Kalman filters for markers that have been dropped
@@ -80,43 +80,41 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
 
       const recordSet = confirmedIds.length > 0 ? new Set(confirmedIds) : null
       const recordedMarkers = smoothed.filter((m) => !recordSet || recordSet.has(m.id))
+      // Use the scale frozen into the session so one recording never mixes scales
+      const radiusCm = useSessionStore.getState().current?.markerRadiusCm ?? markerRadiusCm
 
-      // Establish origin on first frame; update scale every frame so camera repositioning
-      // between sessions doesn't cause drift.
-      if (coordEnabled && recordedMarkers.length > 0) {
-        const pxPerCm =
-          calibratedPxPerCm ??
-          estimatePxPerCm(recordedMarkers.map((m) => m.radius)) ?? 1
-
-        if (isFirstFrame.current) {
-          const origin = {
-            x: recordedMarkers.reduce((s, m) => s + m.x, 0) / recordedMarkers.length,
-            y: recordedMarkers.reduce((s, m) => s + m.y, 0) / recordedMarkers.length,
+      // Coordinate mode: fix the origin at the centroid of the first frame that has a visible marker.
+      // Each marker is converted with its own radius, so positions don't drift with camera distance.
+      if (coordEnabled && frameSize && !originRef.current) {
+        const visible = recordedMarkers
+          .filter((m) => m.missingFrames === 0)
+          .map((m) => markerPlaneCm(m, frameSize, radiusCm))
+        if (visible.length > 0) {
+          originRef.current = {
+            x: visible.reduce((s, p) => s + p.x, 0) / visible.length,
+            y: visible.reduce((s, p) => s + p.y, 0) / visible.length,
           }
-          coordRef.current = { origin, pxPerCm }
-          setReference(origin, pxPerCm)
-        } else if (coordRef.current) {
-          // Keep origin fixed; refresh scale from live marker sizes
-          coordRef.current = { ...coordRef.current, pxPerCm }
-          setReference(coordRef.current.origin, pxPerCm)
         }
       }
-      if (isFirstFrame.current) isFirstFrame.current = false
+      const origin = coordEnabled && frameSize ? originRef.current : null
 
-      const coord = coordEnabled ? coordRef.current : null
+      const toPos = (m: TrackedMarker): Point2D => {
+        if (!origin || !frameSize) return { x: m.x, y: m.y }
+        const p = markerPlaneCm(m, frameSize, radiusCm)
+        return { x: -(p.x - origin.x), y: -(p.y - origin.y) }
+      }
 
-      const toPos = (m: TrackedMarker) =>
-        coord
-          ? { x: -(m.x - coord.origin.x) / coord.pxPerCm, y: -(m.y - coord.origin.y) / coord.pxPerCm }
-          : { x: m.x, y: m.y }
-
-      const pos = new Map(recordedMarkers.map((m) => [m.id, toPos(m)]))
+      // In coordinate mode, positions are only recorded once the origin exists — never px under a cm label
+      const pos = coordEnabled && !origin
+        ? new Map<number, Point2D>()
+        : new Map(recordedMarkers.map((m) => [m.id, toPos(m)]))
       const markerMap = new Map(recordedMarkers.map((m) => [m.id, m]))
 
       const angles: Record<string, number> = {}
       for (const g of groups) {
         if (g.type === 'angle' && g.markerIds.length === 3) {
-          const pts = g.markerIds.map((id) => pos.get(id))
+          // Image coordinates, as before and as shown live — per-marker radius noise must not leak into angles
+          const pts = g.markerIds.map((id) => markerMap.get(id))
           if (!pts.every(Boolean)) continue
           angles[g.id] = computeAngle(
             [pts[0]!, pts[1]!, pts[2]!],
@@ -126,13 +124,10 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
         } else if (g.type === 'distance' && g.markerIds.length === 2) {
           const mA = markerMap.get(g.markerIds[0])
           const mB = markerMap.get(g.markerIds[1])
-          if (!mA || !mB) continue
-          const pxDist = distancePx({ x: mA.x, y: mA.y }, { x: mB.x, y: mB.y })
-          // Per-pair scale: each marker's radius determines its local depth.
-          // This corrects for markers at different distances from the camera.
-          angles[g.id] = coord
-            ? pxDist / pairScale(mA.radius, mB.radius, calibratedPxPerCm)
-            : pxDist
+          if (!mA || !mB || !frameSize) continue
+          // Always cm, independent of coordinate mode; null while either marker is a ghost
+          const d = pairDistanceCm(mA, mB, frameSize, radiusCm)
+          if (d != null) angles[g.id] = d
         }
       }
 
@@ -143,7 +138,7 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
         markerPositions: Object.fromEntries(pos),
       })
     },
-    [setTracked, setLatency, isRecording, sessionId, groups, addFrame, confirmedIds, coordEnabled, calibratedPxPerCm, setReference],
+    [setTracked, setLatency, isRecording, sessionId, groups, addFrame, confirmedIds, coordEnabled, markerRadiusCm, frameSize],
   )
 
   onResult(handleResult)
@@ -153,11 +148,10 @@ export function useMarkerTracking(videoRef: RefObject<HTMLVideoElement>) {
   const resetTracking = useCallback(() => {
     trackedRef.current = []
     kalmanMap.current.clear()
-    coordRef.current = null
+    originRef.current = null
     resetRemapper()
     resetMarkers()
-    clearReference()
-  }, [resetMarkers, clearReference])
+  }, [resetMarkers])
 
   const processFrameWithMode = useCallback(
     (buffer: ArrayBuffer, width: number, height: number, frameId: number) =>

@@ -16,18 +16,14 @@ export interface AngleGroup {
 
 interface AngleStore {
   groups: AngleGroup[]
-  mmPerPx: number | null
 
   addGroup: (g: AngleGroup) => void
   removeGroup: (id: string) => void
-  setMmPerPx: (v: number) => void
 }
 
 export const useAngleStore = create<AngleStore>((set) => ({
   groups: [],
-  mmPerPx: null,
 
   addGroup: (g) => set((s) => ({ groups: [...s.groups, g] })),
   removeGroup: (id) => set((s) => ({ groups: s.groups.filter((g) => g.id !== id) })),
-  setMmPerPx: (mmPerPx) => set({ mmPerPx }),
 }))

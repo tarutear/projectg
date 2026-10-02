@@ -5,8 +5,9 @@ import type { RefObject } from 'react'
 import { useCameraStore } from '@/store/cameraStore'
 import { useMarkerStore } from '@/store/markerStore'
 import { useAngleStore } from '@/store/angleStore'
-import { useCoordinateStore, estimatePxPerCm, pairScale } from '@/store/coordinateStore'
-import { computeAngle, distancePx } from '@/lib/motion/geometry'
+import { useMarkerRadiusCm } from '@/store/coordinateStore'
+import { computeAngle } from '@/lib/motion/geometry'
+import { pairDistanceCm } from '@/lib/motion/metric'
 
 const CLICK_RADIUS = 48  // px in canvas coords — how close a click must be to confirm
 
@@ -17,10 +18,10 @@ interface Props {
 
 export function CameraView({ videoRef, onMarkerConfirm }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { error, stream } = useCameraStore()
+  const { error, stream, setFrameSize } = useCameraStore()
   const { tracked, confirmedIds, names } = useMarkerStore()
-  const { groups, mmPerPx } = useAngleStore()
-  const { enabled: coordEnabled, calibratedPxPerCm } = useCoordinateStore()
+  const { groups } = useAngleStore()
+  const markerRadiusCm = useMarkerRadiusCm()
 
   const confirmedSet = useMemo(() => new Set(confirmedIds), [confirmedIds])
 
@@ -34,12 +35,18 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
       if (!video || !canvas || video.videoWidth === 0) return
       canvas.width  = video.videoWidth
       canvas.height = video.videoHeight
+      setFrameSize({ width: video.videoWidth, height: video.videoHeight })
     }
 
     if (video.readyState >= HTMLMediaElement.HAVE_METADATA) sync()
     video.addEventListener('loadedmetadata', sync)
-    return () => video.removeEventListener('loadedmetadata', sync)
-  }, [videoRef])
+    video.addEventListener('resize', sync)
+    return () => {
+      video.removeEventListener('loadedmetadata', sync)
+      video.removeEventListener('resize', sync)
+    }
+  // `error` swaps the <video>/<canvas> out and back in, so re-attach to the new elements
+  }, [videoRef, setFrameSize, error])
 
   // Redraw marker overlay whenever tracking state or groups change
   useEffect(() => {
@@ -53,10 +60,6 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
     // Mirror x coordinates so the canvas matches the CSS-mirrored video
     const W = canvas.width
     const mx = (x: number) => W - x
-
-    // Estimate live pxPerCm from confirmed markers' radii
-    const confirmedRadii = tracked.filter((m) => confirmedSet.has(m.id)).map((m) => m.radius)
-    const livePxPerCm = estimatePxPerCm(confirmedRadii)
 
     const nameMap = new Map(names.map((n) => [n.markerId, n.name]))
     const hasConfirmed = confirmedIds.length > 0
@@ -85,17 +88,8 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
         const vx = pts[g.vertexIndex ?? 1]!
         drawBadge(ctx, `${deg.toFixed(1)}°`, mx(vx.x), vx.y - Math.max(vx.radius, 16) - 4, '#93c5fd')
       } else if (g.type === 'distance' && pts.length === 2) {
-        const px  = distancePx(pts[0]!, pts[1]!)
-        const mA  = pts[0]!, mB = pts[1]!
-        const scale = pairScale(mA.radius, mB.radius, calibratedPxPerCm)
-        let val: string
-        if (scale && (calibratedPxPerCm || coordEnabled)) {
-          val = `${(px / scale).toFixed(2)} cm`
-        } else if (mmPerPx) {
-          val = `${(px * mmPerPx).toFixed(1)} mm`
-        } else {
-          val = `${px.toFixed(0)} px`
-        }
+        const d   = pairDistanceCm(pts[0]!, pts[1]!, { width: canvas.width, height: canvas.height }, markerRadiusCm)
+        const val = d != null ? `${d.toFixed(2)} cm` : '—'
         drawBadge(ctx, val, mx((pts[0]!.x + pts[1]!.x) / 2), (pts[0]!.y + pts[1]!.y) / 2 - 14, '#93c5fd')
       }
     }
@@ -142,7 +136,7 @@ export function CameraView({ videoRef, onMarkerConfirm }: Props) {
       drawBadge(ctx, label, mx(m.x), m.y - r - 4, badgeColor)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracked, confirmedIds, names, groups, mmPerPx, coordEnabled, calibratedPxPerCm])
+  }, [tracked, confirmedIds, names, groups, markerRadiusCm])
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onMarkerConfirm || !canvasRef.current) return

@@ -2,23 +2,21 @@
 
 import { useAngleStore } from '@/store/angleStore'
 import { useMarkerStore } from '@/store/markerStore'
-import { useCoordinateStore, estimatePxPerCm, pairScale } from '@/store/coordinateStore'
-import { computeAngle, distancePx } from '@/lib/motion/geometry'
+import { useCameraStore } from '@/store/cameraStore'
+import { useMarkerRadiusCm } from '@/store/coordinateStore'
+import { computeAngle } from '@/lib/motion/geometry'
+import { pairDistanceCm } from '@/lib/motion/metric'
 
 export function AngleGroupList() {
-  const { groups, removeGroup, mmPerPx } = useAngleStore()
-  const { tracked, confirmedIds } = useMarkerStore()
-  const { enabled: coordEnabled, calibratedPxPerCm } = useCoordinateStore()
+  const { groups, removeGroup } = useAngleStore()
+  const tracked = useMarkerStore((s) => s.tracked)
+  const frameSize = useCameraStore((s) => s.frameSize)
+  const markerRadiusCm = useMarkerRadiusCm()
 
   const posMap = new Map<number, { x: number; y: number }>(
     tracked.map((m) => [m.id, { x: m.x, y: m.y }])
   )
   const markerMap = new Map(tracked.map((m) => [m.id, m]))
-
-  // Estimate live pxPerCm from confirmed markers' radii (fallback when not calibrated)
-  const confirmedSet = new Set(confirmedIds)
-  const confirmedRadii = tracked.filter((m) => confirmedSet.has(m.id)).map((m) => m.radius)
-  const livePxPerCm = estimatePxPerCm(confirmedRadii)
 
   if (groups.length === 0) return <p className="text-xs text-gray-500 mt-1">No groups yet.</p>
 
@@ -36,21 +34,11 @@ export function AngleGroupList() {
               g.angleVariant ?? 'interior',
             )
             val = `${deg.toFixed(1)}°`
-          } else if (g.type === 'distance' && pts.length === 2) {
-            const px = distancePx(pts[0]!, pts[1]!)
-            const mA = markerMap.get(g.markerIds[0])
-            const mB = markerMap.get(g.markerIds[1])
-            // Use per-pair scale when both markers visible; respect calibration first.
-            const scale = mA && mB
-              ? pairScale(mA.radius, mB.radius, calibratedPxPerCm)
-              : (calibratedPxPerCm ?? livePxPerCm)
-            if (scale && (calibratedPxPerCm || coordEnabled)) {
-              val = `${(px / scale).toFixed(2)} cm`
-            } else if (mmPerPx) {
-              val = `${(px * mmPerPx).toFixed(1)} mm`
-            } else {
-              val = `${px.toFixed(0)} px`
-            }
+          } else if (g.type === 'distance' && pts.length === 2 && frameSize) {
+            const d = pairDistanceCm(
+              markerMap.get(g.markerIds[0])!, markerMap.get(g.markerIds[1])!, frameSize, markerRadiusCm,
+            )
+            if (d != null) val = `${d.toFixed(2)} cm`
           }
         }
         return (
